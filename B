@@ -1,0 +1,21 @@
+SELECT
+    TRUNC(TO_DATE(t.T__FILTERED, 'YYYY/MM/DD HH24:MI:SS')) AS msg_date,
+    REGEXP_SUBSTR(
+        t.T_MESSAGE,
+        '\[([^\]]*?)\]',
+        1,
+        n.lvl,
+        NULL,
+        1
+    ) AS raw_token
+FROM SANCTIONS_OWNER.FOFA_HIST_MESSAGE t
+CROSS APPLY (
+    SELECT LEVEL AS lvl
+    FROM dual
+    CONNECT BY LEVEL <= REGEXP_COUNT(
+        t.T_MESSAGE,
+        '\[[^\]]*?\]'
+    )
+) n
+WHERE TRUNC(TO_DATE(t.T__FILTERED, 'YYYY/MM/DD HH24:MI:SS'))
+      BETWEEN DATE '2024-08-24' AND DATE '2024-08-24';
