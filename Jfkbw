@@ -1,0 +1,53 @@
+import pandas as pd
+import re
+
+# --- 1. Make sure MSG_DATE is actually datetime (so we can sort by time) ---
+DF['MSG_DATE'] = pd.to_datetime(DF['MSG_DATE'], errors='coerce')
+
+# --- 2. Function to extract the valid keywords from one T_MESSAGE row ---
+def extract_valid_keywords(message_text):
+    if pd.isna(message_text):
+        return []
+
+    # grab everything between [ ... ]
+    raw_keywords = re.findall(r'\[([^\]]+)\]', str(message_text))
+
+    cleaned_keywords = []
+    for kw in raw_keywords:
+        # normalize spaces and stray pipes
+        k = kw.strip()
+        k = re.sub(r'\s+', ' ', k)        # collapse multiple spaces
+        k = re.sub(r'[|]+$', '', k).strip()  # drop trailing pipes like 'BUSINESS X|'
+
+        # rule: skip if it ends with 'X' (after trimming)
+        # e.g. 'FIRCOSOFT X' -> skip
+        if k.endswith('X'):
+            continue
+
+        cleaned_keywords.append(k)
+
+    return cleaned_keywords
+
+
+# --- 3. Walk through DF in chronological order and record first-seen date for each keyword ---
+first_seen = {}  # keyword -> first MSG_DATE
+
+for _, row in DF.sort_values('MSG_DATE').iterrows():
+    msg_date = row['MSG_DATE']
+    msg_text = row['T_MESSAGE']
+
+    for kw in extract_valid_keywords(msg_text):
+        # only set if we haven't seen this keyword before
+        if kw not in first_seen:
+            first_seen[kw] = msg_date
+
+# --- 4. Build the final result dataframe ---
+result_df = (
+    pd.DataFrame(
+        [{'KEYWORD': k, 'FIRST_OCCURRENCE_DATE': v} for k, v in first_seen.items()]
+    )
+    .sort_values(['FIRST_OCCURRENCE_DATE', 'KEYWORD'])
+    .reset_index(drop=True)
+)
+
+print(result_df)
