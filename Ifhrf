@@ -1,0 +1,35 @@
+WITH base_rows AS (
+    SELECT
+        TRUNC(TO_DATE(t.T_FILTERED, 'YYYY/MM/DD HH24:MI:SS')) AS msg_date,
+        TO_CHAR(SUBSTR(t.T_MESSAGE, 1, 4000)) AS msg_text
+    FROM SANCTIONS_OWNER.FOFA_HIST_MESSAGE t
+    WHERE TRUNC(TO_DATE(t.T_FILTERED, 'YYYY/MM/DD HH24:MI:SS'))
+          = DATE '2024-08-02'
+)
+SELECT
+    msg_date,
+    SUBSTR(msg_text, 1, 400) AS msg_preview,
+    DUMP(SUBSTR(msg_text, 1, 80), 1016) AS msg_dump
+FROM base_rows
+FETCH FIRST 1 ROW ONLY;
+
+
+
+
+
+
+WITH base_rows AS (
+    SELECT
+        TRUNC(TO_DATE(t.T_FILTERED, 'YYYY/MM/DD HH24:MI:SS')) AS msg_date,
+        TO_CHAR(SUBSTR(t.T_MESSAGE, 1, 4000)) AS msg_text
+    FROM SANCTIONS_OWNER.FOFA_HIST_MESSAGE t
+    WHERE TRUNC(TO_DATE(t.T_FILTERED, 'YYYY/MM/DD HH24:MI:SS'))
+          = DATE '2024-08-02'
+)
+SELECT
+    msg_date,
+    REGEXP_COUNT(msg_text, '"?\[[^]]*?\]') AS count_plain_quote_then_brackets,
+    REGEXP_COUNT(msg_text, '\[[^]]*?\]')   AS count_just_brackets,
+    REGEXP_COUNT(msg_text, '\[[^]]*\]')    AS count_simple_fallback
+FROM base_rows
+FETCH FIRST 5 ROWS ONLY;
