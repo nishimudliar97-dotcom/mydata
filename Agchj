@@ -1,0 +1,13 @@
+WITH base_rows AS (
+    SELECT
+        TRUNC(TO_DATE(t.T_FILTERED, 'YYYY/MM/DD HH24:MI:SS')) AS msg_date,
+        TO_CHAR(SUBSTR(t.T_MESSAGE, 1, 4000)) AS msg_text
+    FROM SANCTIONS_OWNER.FOFA_HIST_MESSAGE t
+    WHERE TRUNC(TO_DATE(t.T_FILTERED, 'YYYY/MM/DD HH24:MI:SS'))
+          BETWEEN DATE '2024-08-02' AND DATE '2024-08-02'   -- 2nd Aug only
+)
+SELECT
+    msg_date,
+    REGEXP_COUNT(msg_text, '"?\[[^\]]*?\]') AS quoted_bracket_cnt
+FROM base_rows
+FETCH FIRST 5 ROWS ONLY;
