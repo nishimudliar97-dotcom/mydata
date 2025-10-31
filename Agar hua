@@ -1,0 +1,73 @@
+WITH base_rows AS (
+    -- 1. pull date and slice of message CLOB
+    SELECT
+        TRUNC(TO_DATE(t.T_FILTERED, 'YYYY/MM/DD HH24:MI:SS')) AS msg_date,
+        TO_CHAR(SUBSTR(t.T_MESSAGE, 1, 4000)) AS msg_text
+    FROM SANCTIONS_OWNER.FOFA_HIST_MESSAGE t
+    WHERE TRUNC(TO_DATE(t.T_FILTERED, 'YYYY/MM/DD HH24:MI:SS'))
+          BETWEEN DATE '2024-08-01' AND DATE '2024-08-02'   -- <-- adjust window here
+),
+extracted AS (
+    -- 2. explode each message into one row per [ ... ] token
+    SELECT
+        b.msg_date,
+        REGEXP_SUBSTR(
+            b.msg_text,
+            '\[([^]]*?)\]',   -- capture inside brackets
+            1,
+            n.lvl,
+            NULL,
+            1
+        ) AS raw_token
+    FROM base_rows b
+    CROSS APPLY (
+        SELECT LEVEL AS lvl
+        FROM dual
+        CONNECT BY LEVEL <= REGEXP_COUNT(
+            b.msg_text,
+            '\[[^]]*?\]'
+        )
+    ) n
+),
+cleaned AS (
+    -- 3. trim, uppercase, and drop labels that end with X
+    SELECT
+        msg_date,
+        UPPER(TRIM(raw_token)) AS keyword
+    FROM extracted
+    WHERE raw_token IS NOT NULL
+      -- remove the ones whose LAST non-space char is X
+      AND NOT REGEXP_LIKE(RTRIM(raw_token), 'X$')
+),
+dedup AS (
+    -- 4. unique (date, keyword) per day
+    SELECT DISTINCT
+        msg_date,
+        keyword
+    FROM cleaned
+),
+first_seen AS (
+    -- 5. find first-ever appearance for each keyword in the whole range
+    SELECT
+        keyword,
+        MIN(msg_date) AS first_date
+    FROM dedup
+    GROUP BY keyword
+),
+final_per_day AS (
+    -- 6. keep only keywords whose FIRST appearance is within our reporting window
+    SELECT
+        first_date AS msg_date,
+        keyword
+    FROM first_seen
+    WHERE first_date BETWEEN DATE '2024-08-01' AND DATE '2024-08-02'  -- same window
+)
+-- 7. roll up: what NEW keywords appeared on each day
+SELECT
+    msg_date,
+    LISTAGG(keyword, ', ')
+        WITHIN GROUP (ORDER BY keyword) AS new_keywords_that_day
+FROM final_per_day
+GROUP BY msg_date
+ORDER BY msg_date;
+
