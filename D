@@ -1,0 +1,63 @@
+WITH base_rows AS (
+    SELECT
+        TRUNC(TO_DATE(t.T__FILTERED, 'YYYY/MM/DD HH24:MI:SS')) AS msg_date,
+        t.D_MESSAGE
+    FROM SANCTIONS_OWNER.FOFA_HIST_MESSAGE t
+    WHERE TRUNC(TO_DATE(t.T__FILTERED, 'YYYY/MM/DD HH24:MI:SS'))
+          BETWEEN DATE '2024-08-20' AND DATE '2024-08-31'  -- <-- choose your window
+),
+extracted AS (
+    SELECT
+        b.msg_date,
+        REGEXP_SUBSTR(
+            b.D_MESSAGE,
+            '\[([^\]]*?)\]',
+            1,
+            n.lvl,
+            NULL,
+            1
+        ) AS raw_token
+    FROM base_rows b
+    CROSS APPLY (
+        SELECT LEVEL AS lvl
+        FROM dual
+        CONNECT BY LEVEL <= REGEXP_COUNT(
+            b.D_MESSAGE,
+            '\[[^\]]*?\]'
+        )
+    ) n
+),
+cleaned AS (
+    SELECT
+        msg_date,
+        UPPER(RTRIM(raw_token)) AS keyword
+    FROM extracted
+    WHERE raw_token IS NOT NULL
+      AND NOT REGEXP_LIKE(RTRIM(raw_token), 'X$')  -- drop tokens ending with X
+),
+dedup AS (
+    SELECT DISTINCT
+        msg_date,
+        keyword
+    FROM cleaned
+),
+first_seen AS (
+    SELECT
+        keyword,
+        MIN(msg_date) AS first_date
+    FROM dedup
+    GROUP BY keyword
+),
+final_per_day AS (
+    SELECT
+        first_date AS msg_date,
+        keyword
+    FROM first_seen
+    WHERE first_date BETWEEN DATE '2024-08-20' AND DATE '2024-08-31'  -- same window
+)
+SELECT
+    msg_date,
+    LISTAGG(keyword, ', ') WITHIN GROUP (ORDER BY keyword) AS new_keywords_that_day
+FROM final_per_day
+GROUP BY msg_date
+ORDER BY msg_date;
