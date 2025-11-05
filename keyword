@@ -1,60 +1,36 @@
-"""
-Search a keyword across many Excel files and export all hits.
-
-- Reads only MSG_DATE and T__MESSAGE (case-insensitive).
-- Finds the keyword (substring by default; set WHOLE_WORD=True for whole-word).
-- Captures 10 chars before and after the first occurrence in each message.
-- Saves results to Excel.
-
-Tested with .xlsx / .xlsm / .xlsb (needs `pyxlsb` for .xlsb).
-pip install pandas openpyxl pyxlsb
-"""
-
-import os
-import re
+import os, re
 from pathlib import Path
 import pandas as pd
 
-# ====== USER SETTINGS ======
-FOLDER = r"D:\path\to\your\folder\with\excels"  # <-- change this
-KEYWORD = "Focusoft"                             # <-- change this
-OUTFILE = r"D:\path\to\output\keyword_hits.xlsx" # <-- change this
-
-WHOLE_WORD = False   # True = match whole word using \b boundaries
-CONTEXT_CHARS = 10   # characters before/after to include
+# ====== SETTINGS ======
+FOLDER   = r"C:\Users\...\Downloads\A"          # input folder
+KEYWORD  = "CDTBRL03"
+OUTFILE  = r"C:\Users\...\Downloads\A\hits.xlsx"
+WHOLE_WORD = False
 CASE_INSENSITIVE = True
-# ===========================
+CONTEXT_CHARS = 20
+CONTEXT_COL   = f"context_{CONTEXT_CHARS}"      # <-- single source of truth
+# ======================
 
-# Build regex once (escaped so literal keyword works)
 boundary = r"\b" if WHOLE_WORD else ""
 flags = re.IGNORECASE if CASE_INSENSITIVE else 0
 PATTERN = re.compile(boundary + re.escape(KEYWORD) + boundary, flags)
 
-# We’ll accept a few common header name variants
 DATE_CANDIDATES = {"msg_date", "message_date", "date", "msgdate"}
 MSG_CANDIDATES  = {"t__message", "t_message", "message", "t__msg", "t msg", "t-message"}
 
 def _select_usecols(col_name: str) -> bool:
-    if not col_name:
-        return False
-    c = col_name.strip().lower()
+    c = (col_name or "").strip().lower()
     return c in DATE_CANDIDATES or c in MSG_CANDIDATES
 
 def _normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
-    # Map any accepted header variant to canonical names
-    lower_map = {c: c.strip().lower() for c in df.columns}
-    inv = {v: k for k, v in lower_map.items()}
-
-    # Find best matches
+    lower = {c: c.strip().lower() for c in df.columns}
+    inv = {v: k for k, v in lower.items()}
     date_col = next((inv[c] for c in DATE_CANDIDATES if c in inv), None)
     msg_col  = next((inv[c] for c in MSG_CANDIDATES  if c in inv), None)
     if date_col is None or msg_col is None:
         raise ValueError(f"Could not find required columns in: {list(df.columns)}")
-
-    return (
-        df[[date_col, msg_col]]
-        .rename(columns={date_col: "MSG_DATE", msg_col: "T__MESSAGE"})
-    )
+    return df[[date_col, msg_col]].rename(columns={date_col:"MSG_DATE", msg_col:"T__MESSAGE"})
 
 def _first_context(text: str) -> str:
     if not isinstance(text, str):
@@ -68,44 +44,30 @@ def _first_context(text: str) -> str:
 
 def process_file(path: Path) -> pd.DataFrame:
     try:
-        # Pick engine for .xlsb; let pandas decide for others
         engine = "pyxlsb" if path.suffix.lower() == ".xlsb" else None
-        # Read only the required columns (case-insensitive via lambda)
-        df = pd.read_excel(
-            path,
-            engine=engine,
-            usecols=_select_usecols,
-            dtype=str  # avoids re-parsing and keeps speed OK
-        )
+        df = pd.read_excel(path, engine=engine, usecols=_select_usecols, dtype=str)
         df = _normalize_columns(df)
-        # Fast prefilter using vectorized .str.contains with the same regex
         hits = df["T__MESSAGE"].fillna("").str.contains(PATTERN, regex=True)
         if not hits.any():
-            return pd.DataFrame(columns=["MSG_DATE", "T__MESSAGE", "keyword", "context_10", "source_file"])
-
+            return pd.DataFrame(columns=["MSG_DATE","T__MESSAGE","keyword",CONTEXT_COL,"source_file"])
         sub = df.loc[hits].copy()
         sub["keyword"] = KEYWORD
-        # Extract context around the *first* occurrence in each message
-        sub["context_10"] = sub["T__MESSAGE"].map(_first_context)
+        sub[CONTEXT_COL] = sub["T__MESSAGE"].map(_first_context)
         sub["source_file"] = path.name
-        return sub[["MSG_DATE", "T__MESSAGE", "keyword", "context_10", "source_file"]]
+        return sub[["MSG_DATE","T__MESSAGE","keyword",CONTEXT_COL,"source_file"]]
     except Exception as e:
-        # If one workbook is bad, don’t stop the whole run
         print(f"[WARN] Skipped {path.name}: {e}")
-        return pd.DataFrame(columns=["MSG_DATE", "T__MESSAGE", "keyword", "context_10", "source_file"])
+        return pd.DataFrame(columns=["MSG_DATE","T__MESSAGE","keyword",CONTEXT_COL,"source_file"])
 
 def main():
     folder = Path(FOLDER)
-    files = sorted([p for p in folder.glob("*.xls*") if p.is_file()])
-    if not files:
-        raise SystemExit(f"No Excel files found in {folder}")
+    files = sorted(p for p in folder.glob("*.xls*") if p.is_file())
+    # Don’t read the output file if it’s in the same folder
+    outpath = Path(OUTFILE).resolve()
+    files = [p for p in files if p.resolve() != outpath]
 
-    all_parts = []
-    for p in files:
-        all_parts.append(process_file(p))
-
-    result = pd.concat(all_parts, ignore_index=True) if all_parts else pd.DataFrame()
-    # Save
+    parts = [process_file(p) for p in files]
+    result = pd.concat(parts, ignore_index=True) if parts else pd.DataFrame(columns=["MSG_DATE","T__MESSAGE","keyword",CONTEXT_COL,"source_file"])
     result.to_excel(OUTFILE, index=False)
     print(f"Done. Files scanned: {len(files)} | Matches: {len(result)}")
     print(f"Output -> {OUTFILE}")
