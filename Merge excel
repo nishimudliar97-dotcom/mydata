@@ -1,0 +1,38 @@
+import os
+import pandas as pd
+
+# ---------- USER INPUT ----------
+# 👇 Change this to your folder path
+folder_path = r"C:\Users\YourName\Documents\ExcelFolder"
+# --------------------------------
+
+# Collect all Excel files in the folder
+excel_files = [f for f in os.listdir(folder_path) if f.endswith(('.xlsx', '.xls'))]
+
+# Initialize empty list for dataframes
+dfs = []
+
+# Read each file
+for file in excel_files:
+    file_path = os.path.join(folder_path, file)
+    print(f"Reading: {file_path}")
+    df = pd.read_excel(file_path)
+    dfs.append(df)
+
+# Merge all dataframes together
+merged_df = pd.concat(dfs, ignore_index=True)
+
+# Remove duplicate rows (based on all columns)
+merged_df = merged_df.drop_duplicates()
+
+# Optional: if you want to remove duplicates based only on FILTER_DATE column
+# merged_df = merged_df.drop_duplicates(subset=['FILTER_DATE'])
+
+# Sort by date if needed
+merged_df = merged_df.sort_values(by='FILTER_DATE')
+
+# Save the merged file
+output_file = os.path.join(folder_path, "merged_unique.xlsx")
+merged_df.to_excel(output_file, index=False)
+
+print(f"\n✅ Merged file saved successfully at: {output_file}")
