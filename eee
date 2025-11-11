@@ -1,0 +1,16 @@
+=IFERROR(
+  INDEX(Sheet3!$A$2:$A$20,
+        SMALL(
+          IF( (Sheet3!$B$2:$B$20=$B$3) *
+              ISNUMBER(MATCH(Sheet3!$A$2:$A$20,Sheet2!$A$2:$A$9,0)),
+              ROW(Sheet3!$A$2:$A$20)-ROW(Sheet3!$A$2)+1
+          ),
+          ROWS(C$4:C4)
+        )
+  ),
+"")
+
+
+=IF(C4="","",
+   IFERROR(INDEX(Sheet2!$B$2:$B$9, MATCH(C4,Sheet2!$A$2:$A$9,0)),"")
+)
