@@ -1,5 +1,0 @@
-=IFERROR(
-   INDEX(Sheet3!$A$2:$A$100,
-      AGGREGATE(15,6,(ROW(Sheet3!$A$2:$A$100)-ROW(Sheet3!$A$2)+1)/(Sheet3!$B$2:$B$100=$C$3), ROWS($D$3:D3))
-   ),
-"")
