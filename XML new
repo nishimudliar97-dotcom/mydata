@@ -1,0 +1,62 @@
+import pandas as pd
+import os
+
+# ------------------------
+# CONFIG
+# ------------------------
+FOLDER_PATH = r"C:\your\folder\path"   # <-- CHANGE THIS
+
+# ------------------------
+# SQL TEMPLATE
+# ------------------------
+def build_sql(wcp_list):
+    sql_list = ",\n".join([f"('equal', '{x}')" for x in wcp_list])
+
+    sql_query = f"""
+SELECT
+    Count(Distinct Msg.T_MESSAGE_ID) AS MSGS,
+    Count(Msg.T_MESSAGE_ID) AS TOTAL_HITS
+FROM SANCTIONS_OWNER.FOF_HIST_HITS FHH
+JOIN SANCTIONS_OWNER.FOFA_HIST_MESSAGE MSG
+    ON MSG.t_system_id = FHH.SYSTEM_ID
+WHERE msg.T_FILTERED >= '2024/07/01 00:00:00'
+  AND msg.T_FILTERED <= '2024/09/31 23:59:59'
+  AND msg.t_lastoperator = 'ReapplyingEngine'
+  AND msg.T_DECISION_TYPE <> 'RECHECKED'
+  AND msg.t_lastoperator <> 'Stripping Engine'
+  AND ('equal', FHH.id_list) IN (
+{sql_list}
+);
+"""
+    return sql_query.strip()
+
+
+# ------------------------
+# PROCESS EACH XML FILE
+# ------------------------
+for filename in os.listdir(FOLDER_PATH):
+    if filename.lower().endswith(".xml"):
+
+        xml_path = os.path.join(FOLDER_PATH, filename)
+        print(f"Processing: {xml_path}")
+
+        # 1. Read XML
+        df = pd.read_xml(xml_path)
+
+        # 2. Extract UID → convert to WCP format
+        uids = df["uid"].astype(int)
+        wcp_ids = ["WCP" + str(uid).zfill(7) for uid in uids]
+
+        # 3. Build SQL
+        sql_output = build_sql(wcp_ids)
+
+        # 4. Output .txt with same name
+        output_name = filename.replace(".xml", ".txt")
+        output_path = os.path.join(FOLDER_PATH, output_name)
+
+        with open(output_path, "w") as f:
+            f.write(sql_output)
+
+        print(f"✔ Output written to: {output_path}")
+
+print("\n🎉 All XML files processed successfully!")
