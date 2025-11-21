@@ -1,0 +1,60 @@
+import os
+import pandas as pd
+
+# === CATEGORY DICTIONARIES ===
+internal_sanctions = [
+    "PB_PPL", "BARCCAP", "BPROHIB", "UAEPRV", "TRADE_PRV"
+]
+
+internal_non_sanctions = [
+    "CBI-NY", "WTR_MTO", "WTR_MTI", "USPRV-GAME", "ITA_LAW185", "US_LEGAL_FREEZE_PRV"
+]
+
+supplementary_regulatory = [
+    "DELTA_LIST", "BPRV", "ECVESPRV", "ChinaEO13959_PRV", "PORTUGAL_PRV",
+    "SSILPRV", "Kharon_PRV", "00069295_PRV", "MAS_RGA", "MAS_CONTROL_WL",
+    "PRV_MEXICO_WL", "ISIN_PRV", "OFACPRV"
+]
+
+
+def categorize_file(fname):
+    f = fname.upper()
+    for k in internal_sanctions:
+        if k.upper() in f:
+            return "Internal_Sanctions", k
+    for k in internal_non_sanctions:
+        if k.upper() in f:
+            return "Internal_NonSanctions", k
+    for k in supplementary_regulatory:
+        if k.upper() in f:
+            return "Supplementary_Regulatory", k
+    return None, None
+
+
+folder_path = r"C:\Your\Folder\Path"   # CHANGE THIS
+output_files = {
+    "Internal_Sanctions": "Internal_Sanctions.xlsx",
+    "Internal_NonSanctions": "Internal_NonSanctions.xlsx",
+    "Supplementary_Regulatory": "Supplementary_Regulatory.xlsx"
+}
+
+# Create writers for each master workbook
+writers = {cat: pd.ExcelWriter(output_files[cat], engine='openpyxl') 
+           for cat in output_files}
+
+# Process all Excel files
+for file in os.listdir(folder_path):
+    if file.endswith(".xlsx") or file.endswith(".xls"):
+        category, sheet_name = categorize_file(file)
+        if category is not None:
+            file_path = os.path.join(folder_path, file)
+            df = pd.read_excel(file_path)
+
+            print(f"Adding {file} → {category} → sheet: {sheet_name}")
+            df.to_excel(writers[category], sheet_name=sheet_name, index=False)
+
+# Save all writers
+for w in writers.values():
+    w.save()
+
+print("All three master files created successfully!")
