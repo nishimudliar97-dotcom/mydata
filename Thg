@@ -1,0 +1,52 @@
+import os
+import pandas as pd
+
+def consolidate_ids(folder_path):
+
+    all_data = []
+
+    # Loop through all files in the folder
+    for file_name in os.listdir(folder_path):
+
+        if file_name.lower().endswith((".xlsx", ".xls")):
+            file_path = os.path.join(folder_path, file_name)
+
+            try:
+                df = pd.read_excel(file_path)
+
+                # Required columns present?
+                if "ID" in df.columns and "Keywords" in df.columns:
+
+                    # Extract only needed data
+                    temp = df[["ID", "Keywords"]].copy()
+
+                    # Store for final consolidation
+                    all_data.append(temp)
+
+                else:
+                    print(f"❗ Skipped (ID/Keywords missing): {file_name}")
+
+            except Exception as e:
+                print(f"❌ Error reading {file_name}: {e}")
+
+    # If no valid files found
+    if not all_data:
+        print("❌ No valid data found in folder.")
+        return
+
+    # Combine all
+    final_df = pd.concat(all_data, ignore_index=True)
+
+    # Output file path
+    output_file = os.path.join(folder_path, "final_consolidated.xlsx")
+
+    # Save
+    final_df.to_excel(output_file, index=False)
+
+    print(f"✅ File created successfully: {output_file}")
+
+
+# Run the script
+if __name__ == "__main__":
+    folder = input("Enter folder path: ").strip()
+    consolidate_ids(folder)
