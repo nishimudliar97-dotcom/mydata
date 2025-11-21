@@ -1,0 +1,49 @@
+import os
+import pandas as pd
+
+def consolidate_monthly_data(folder_path, output_file="final_monthly_summary.xlsx"):
+
+    all_data = []
+
+    # Loop through all Excel files inside folder_path
+    for file in os.listdir(folder_path):
+        if file.endswith(".xlsx") or file.endswith(".xls"):
+            file_path = os.path.join(folder_path, file)
+
+            try:
+                df = pd.read_excel(file_path)
+
+                # Only keep needed columns
+                df = df[['MONTH_YEAR', 'MSGS', 'TOTAL_HITS']]
+
+                all_data.append(df)
+
+            except Exception as e:
+                print(f"Error reading {file}: {e}")
+
+    # Combine all files
+    final_df = pd.concat(all_data, ignore_index=True)
+
+    # Group by MONTH_YEAR and sum
+    summary = final_df.groupby('MONTH_YEAR', as_index=False).agg({
+        'MSGS': 'sum',
+        'TOTAL_HITS': 'sum'
+    })
+
+    # Sort properly by date
+    try:
+        summary['SORT'] = summary['MONTH_YEAR'].apply(lambda x: pd.to_datetime("01-" + x, format="%d-%b-%y"))
+        summary = summary.sort_values('SORT').drop(columns=['SORT'])
+    except:
+        pass
+
+    # Save final excel
+    summary.to_excel(output_file, index=False)
+
+    print(f"Final summary created: {output_file}")
+
+
+# -------- 👇 GIVE YOUR FOLDER PATH HERE 👇 ---------
+
+folder_path = r"C:\Users\YourName\Desktop\AllExcels"
+consolidate_monthly_data(folder_path)
