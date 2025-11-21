@@ -1,0 +1,49 @@
+import os
+import pandas as pd
+
+def consolidate_ids_from_folder(folder_path):
+
+    all_rows = []
+
+    # Loop through all files in the folder
+    for file_name in os.listdir(folder_path):
+
+        if file_name.lower().endswith((".xlsx", ".xls")):
+            file_path = os.path.join(folder_path, file_name)
+
+            try:
+                df = pd.read_excel(file_path)
+
+                # Check if both required columns exist
+                if "ID" in df.columns and "keyword" in df.columns:
+                    temp_df = df[["ID", "keyword"]].copy()
+                    temp_df["source_file"] = file_name  # optional trace-back
+                    all_rows.append(temp_df)
+
+                else:
+                    print(f"⚠️ Skipped (missing ID/keyword): {file_name}")
+
+            except Exception as e:
+                print(f"❌ Could not read {file_name}: {e}")
+
+    # Check if anything was collected
+    if not all_rows:
+        print("❌ No valid Excel files found with ID and keyword columns.")
+        return
+
+    # Combine all extracted rows
+    final_df = pd.concat(all_rows, ignore_index=True)
+
+    # Output path
+    output_file = os.path.join(folder_path, "consolidated_output.xlsx")
+    final_df.to_excel(output_file, index=False)
+
+    print(f"✅ Consolidated Excel created at:\n{output_file}")
+
+
+# ------------------------
+# RUN
+# ------------------------
+if __name__ == "__main__":
+    folder = input("Enter folder path: ").strip()
+    consolidate_ids_from_folder(folder)
