@@ -1,58 +1,62 @@
-SELECT DISTINCT 
-       MSG.T_SYSTEM_ID,
-       TO_DATE(SUBSTR(MSG.T_FILTERED, 0, 10), 'YYYY/MM/DD') AS DATES,
-       MSG.T_COPY_SERVICE,
-       MSG.T_MESSAGE,
-       MSG.T_FROMAPPLI,
-       MSG.T_SENDER,
-       MSG.T_RECEIVER,
+WITH CLEAN AS (
+    SELECT 
+        MSG.*,
+        REPLACE(REPLACE(REPLACE(MSG.T_MESSAGE, CHR(9), ''), CHR(13), ''), CHR(10), '') AS CLEAN_MSG
+    FROM SANCTIONS_OWNER.FOFA_HIST_MESSAGE MSG
+)
+
+SELECT DISTINCT
+       T_SYSTEM_ID,
+       TO_DATE(SUBSTR(T_FILTERED, 0, 10), 'YYYY/MM/DD') AS DATES,
+       T_COPY_SERVICE,
+       T_MESSAGE,
+       T_FROMAPPLI,
+       T_SENDER,
+       T_RECEIVER,
        'CHATS' AS FLAG,
 
-       ---------------------------------------------------------------------
-       -- 1️⃣ Extract tag inside square brackets: e.g., "ABIZSEV", "ABIZSEV   X"
-       ---------------------------------------------------------------------
+       --------------------------------------------------------------------
+       -- Extract the exact full ABIZSEV tag (with or without X, any spaces)
+       --------------------------------------------------------------------
        REGEXP_REPLACE(
-            REGEXP_SUBSTR(MSG.T_MESSAGE, '\[ABIZSEV[^\]]*\]', 1, 1, NULL, 0),
+            REGEXP_SUBSTR(CLEAN_MSG, '\[ABIZSEV[^\]]*\]', 1, 1, NULL, 0),
             '^\[|\]$'
        ) AS ABIZSEV_TAG,
 
-       ---------------------------------------------------------------------
-       -- 2️⃣ Extract ABIZSEV value after the tag (e.g., hkicl.chats.rtppay.01)
-       ---------------------------------------------------------------------
+       --------------------------------------------------------------------
+       -- Extract the value after ABIZSEV tag
+       --------------------------------------------------------------------
        REGEXP_SUBSTR(
-            MSG.T_MESSAGE,
+            CLEAN_MSG,
             '\[ABIZSEV[^\]]*\]\s*([^\[]+)',
             1, 1, NULL, 1
        ) AS ABIZSEV_VALUE
 
-FROM SANCTIONS_OWNER.FOFA_HIST_MESSAGE MSG
-
+FROM CLEAN
 WHERE
 (
-      (MSG.T_FILTERED >= '2025/10/27 00:00:00' AND MSG.T_FILTERED <= '2025/10/27 23:59:59')
-   OR (MSG.T_FILTERED >= '2025/11/03 00:00:00' AND MSG.T_FILTERED <= '2025/11/03 23:59:59')
-   OR (MSG.T_FILTERED >= '2025/11/10 00:00:00' AND MSG.T_FILTERED <= '2025/11/10 23:59:59')
-   OR (MSG.T_FILTERED >= '2025/11/17 00:00:00' AND MSG.T_FILTERED <= '2025/11/17 23:59:59')
-   OR (MSG.T_FILTERED >= '2025/11/24 00:00:00' AND MSG.T_FILTERED <= '2025/11/24 23:59:59')
-   OR (MSG.T_FILTERED >= '2025/12/01 00:00:00' AND MSG.T_FILTERED <= '2025/12/01 23:59:59')
+      (T_FILTERED >= '2025/10/27 00:00:00' AND T_FILTERED <= '2025/10/27 23:59:59')
+   OR (T_FILTERED >= '2025/11/03 00:00:00' AND T_FILTERED <= '2025/11/03 23:59:59')
+   OR (T_FILTERED >= '2025/11/10 00:00:00' AND T_FILTERED <= '2025/11/10 23:59:59')
+   OR (T_FILTERED >= '2025/11/17 00:00:00' AND T_FILTERED <= '2025/11/17 23:59:59')
+   OR (T_FILTERED >= '2025/11/24 00:00:00' AND T_FILTERED <= '2025/11/24 23:59:59')
+   OR (T_FILTERED >= '2025/12/01 00:00:00' AND T_FILTERED <= '2025/12/01 23:59:59')
 )
 
--- 1️⃣ Match ABIZSEV tag with OR without X
-AND REGEXP_LIKE(MSG.T_MESSAGE, '\[ABIZSEV[^\]]*\]')
+-- Must have ABIZSEV tag
+AND REGEXP_LIKE(CLEAN_MSG, '\[ABIZSEV[^\]]*\]')
 
--- 2️⃣ Exclude ABIZSEV2 variations
-AND NOT REGEXP_LIKE(MSG.T_MESSAGE, '\[ABIZSEV2[^\]]*\]')
+-- Must NOT have ABIZSEV2 tag
+AND NOT REGEXP_LIKE(CLEAN_MSG, '\[ABIZSEV2[^\]]*\]')
 
--- 3️⃣ Check the extracted value contains hkicl
+-- Extracted value must contain hkicl
 AND LOWER(
         REGEXP_SUBSTR(
-            MSG.T_MESSAGE,
+            CLEAN_MSG,
             '\[ABIZSEV[^\]]*\]\s*([^\[]+)',
             1, 1, NULL, 1
         )
     ) LIKE '%hkicl%'
 
--- 4️⃣ Sender/Receiver logic
-AND (MSG.T_SENDER LIKE 'BARCHKHH%' OR MSG.T_RECEIVER LIKE 'BARCHKHH%')
-
-AND MSG.T_LASTOPERATOR = 'ReapplyEngine';
+AND (T_SENDER LIKE 'BARCHKHH%' OR T_RECEIVER LIKE 'BARCHKHH%')
+AND T_LASTOPERATOR = 'ReapplyEngine';
