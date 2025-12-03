@@ -7,14 +7,8 @@ SELECT DISTINCT
        MSG.T_SENDER,
        MSG.T_RECEIVER,
        'CHATS' AS FLAG,
-
-       -- Extract the ABIZSEV value into a column
-       REGEXP_SUBSTR(
-           MSG.T_MESSAGE,
-           '\[ABIZSEV[^\]]*\]\s*([^\[]+)',
-           1, 1, NULL, 1
-       ) AS ABIZSEV_VALUE
-
+       REGEXP_SUBSTR(MSG.T_MESSAGE, '\[ABIZSEV\s*\]\s*([^\[]+)', 1, 1, NULL, 1) AS ABIZSEV_VALUE
+       
 FROM SANCTIONS_OWNER.FOFA_HIST_MESSAGE MSG
 
 WHERE
@@ -27,23 +21,18 @@ WHERE
    OR (MSG.T_FILTERED >= '2025/12/01 00:00:00' AND MSG.T_FILTERED <= '2025/12/01 23:59:59')
 )
 
--- 1️⃣ Ensure ABIZSEV tag exists
-AND REGEXP_LIKE(MSG.T_MESSAGE, '\[ABIZSEV[^\]]*\]')
+-- 1️⃣ Correct ABIZSEV tag match
+AND REGEXP_LIKE(MSG.T_MESSAGE, '\[ABIZSEV\s*\]')
 
--- 2️⃣ Ensure ABIZSEV2 does NOT match by mistake
-AND NOT REGEXP_LIKE(MSG.T_MESSAGE, '\[ABIZSEV2\]')
+-- 2️⃣ Exclude ABIZSEV2
+AND NOT REGEXP_LIKE(MSG.T_MESSAGE, '\[ABIZSEV2\s*\]')
 
--- 3️⃣ Extract ABIZSEV value & check if it contains 'hkicl'
+-- 3️⃣ Extract value and match hkicl
 AND LOWER(
-        REGEXP_SUBSTR(
-            MSG.T_MESSAGE,
-            '\[ABIZSEV[^\]]*\]\s*([^\[]+)',
-            1, 1, NULL, 1
-        )
+        REGEXP_SUBSTR(MSG.T_MESSAGE, '\[ABIZSEV\s*\]\s*([^\[]+)', 1, 1, NULL, 1)
     ) LIKE '%hkicl%'
 
--- 4️⃣ Your existing sender/receiver rule
+-- Sender/receiver
 AND (MSG.T_SENDER LIKE 'BARCHKHH%' OR MSG.T_RECEIVER LIKE 'BARCHKHH%')
 
--- 5️⃣ Existing operator
 AND MSG.T_LASTOPERATOR = 'ReapplyEngine';
