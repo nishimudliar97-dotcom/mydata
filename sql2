@@ -5,34 +5,38 @@ SELECT DISTINCT
     MSG.T_MESSAGE,
     MSG.T_FROMAPPL,
     MSG.T_SENDER,
-    MSG.T_RECEIVER,
-    'CHATS' AS FLAG,
+    MSG.T_RECIEVER,
+    'CHAIN' AS FLAG,
 
-    /* 🔥 Extract only the ABISEV/ABISEV2 bracket block */
+    /* Extract ABISEV value (with or without X) */
     REGEXP_SUBSTR(
         MSG.T_MESSAGE,
-        '\[(ABISEV2?|ABISEV)(\s*X)?\]',
-        1,
-        1,
-        NULL,
-        1
-    ) AS BRACKET_VALUE,
-
-    /* 🔥 Extract the value that comes after the ABISEV bracket */
-    REGEXP_SUBSTR(
-        MSG.T_MESSAGE,
-        '\[ABISEV.*?X\]\s*([^\[]+)',
-        1,
-        1,
-        NULL,
-        1
+        '\[ABISEV[^\]]*X\]|\[ABISEV[^\]]*\]',
+        1, 1
     ) AS ABISEV_VALUE
 
 FROM SANCTIONS_OWNER.FOFA_HIST_MESSAGE MSG
 WHERE
-      (MSG.T_FILTERED >= '2025/10/27 00:00:00' AND MSG.T_FILTERED <= '2025/10/27 23:59:59')
-   OR (MSG.T_FILTERED >= '2025/11/03 00:00:00' AND MSG.T_FILTERED <= '2025/11/03 23:59:59')
-   OR (MSG.T_FILTERED >= '2025/11/07 00:00:00' AND MSG.T_FILTERED <= '2025/11/07 23:59:59')
-   OR (MSG.T_FILTERED >= '2025/11/10 00:00:00' AND MSG.T_FILTERED <= '2025/11/10 23:59:59')
-   OR (MSG.T_FILTERED >= '2025/11/24 00:00:00' AND MSG.T_FILTERED <= '2025/11/24 23:59:59')
-   OR (MSG.T_FILTERED >= '2025/12/01 00:00:00' AND MSG.T_FILTERED <= '2025/12/01 23:59:59');
+(
+    (MSG.T_FILTERED > '2025/10/27 00:00:00' AND MSG.T_FILTERED <= '2025/10/27 23:59:59')
+ OR (MSG.T_FILTERED > '2025/11/03 00:00:00' AND MSG.T_FILTERED <= '2025/11/03 23:59:59')
+ OR (MSG.T_FILTERED > '2025/11/04 00:00:00' AND MSG.T_FILTERED <= '2025/11/04 23:59:59')
+ OR (MSG.T_FILTERED > '2025/11/24 00:00:00' AND MSG.T_FILTERED <= '2025/11/24 23:59:59')
+ OR (MSG.T_FILTERED > '2025/12/01 00:00:00' AND MSG.T_FILTERED <= '2025/12/01 23:59:59')
+)
+
+-- Include ABISEV with or without X
+AND REGEXP_LIKE(
+       MSG.T_MESSAGE,
+       '\[ABISEV[^\]]*X\]|\[ABISEV[^\]]*\]'
+    )
+
+-- Exclude ABISEV2 (X or without X)
+AND NOT REGEXP_LIKE(
+        MSG.T_MESSAGE,
+        '\[ABISEV2[^\]]*\]'
+    )
+
+-- Your existing logic continues
+AND LOWER(MSG.T_MESSAGE) LIKE '%hkicl.chain.rrppay.01%'
+AND MSG.T_LASTOPERATOR = 'ReapplyEngine';
