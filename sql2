@@ -1,0 +1,58 @@
+SELECT DISTINCT 
+       MSG.T_SYSTEM_ID,
+       TO_DATE(SUBSTR(MSG.T_FILTERED, 0, 10), 'YYYY/MM/DD') AS DATES,
+       MSG.T_COPY_SERVICE,
+       MSG.T_MESSAGE,
+       MSG.T_FROMAPPLI,
+       MSG.T_SENDER,
+       MSG.T_RECEIVER,
+       'CHATS' AS FLAG,
+
+       ---------------------------------------------------------------------
+       -- 1️⃣ Extract tag inside square brackets: e.g., "ABIZSEV", "ABIZSEV   X"
+       ---------------------------------------------------------------------
+       REGEXP_REPLACE(
+            REGEXP_SUBSTR(MSG.T_MESSAGE, '\[ABIZSEV[^\]]*\]', 1, 1, NULL, 0),
+            '^\[|\]$'
+       ) AS ABIZSEV_TAG,
+
+       ---------------------------------------------------------------------
+       -- 2️⃣ Extract ABIZSEV value after the tag (e.g., hkicl.chats.rtppay.01)
+       ---------------------------------------------------------------------
+       REGEXP_SUBSTR(
+            MSG.T_MESSAGE,
+            '\[ABIZSEV[^\]]*\]\s*([^\[]+)',
+            1, 1, NULL, 1
+       ) AS ABIZSEV_VALUE
+
+FROM SANCTIONS_OWNER.FOFA_HIST_MESSAGE MSG
+
+WHERE
+(
+      (MSG.T_FILTERED >= '2025/10/27 00:00:00' AND MSG.T_FILTERED <= '2025/10/27 23:59:59')
+   OR (MSG.T_FILTERED >= '2025/11/03 00:00:00' AND MSG.T_FILTERED <= '2025/11/03 23:59:59')
+   OR (MSG.T_FILTERED >= '2025/11/10 00:00:00' AND MSG.T_FILTERED <= '2025/11/10 23:59:59')
+   OR (MSG.T_FILTERED >= '2025/11/17 00:00:00' AND MSG.T_FILTERED <= '2025/11/17 23:59:59')
+   OR (MSG.T_FILTERED >= '2025/11/24 00:00:00' AND MSG.T_FILTERED <= '2025/11/24 23:59:59')
+   OR (MSG.T_FILTERED >= '2025/12/01 00:00:00' AND MSG.T_FILTERED <= '2025/12/01 23:59:59')
+)
+
+-- 1️⃣ Match ABIZSEV tag with OR without X
+AND REGEXP_LIKE(MSG.T_MESSAGE, '\[ABIZSEV[^\]]*\]')
+
+-- 2️⃣ Exclude ABIZSEV2 variations
+AND NOT REGEXP_LIKE(MSG.T_MESSAGE, '\[ABIZSEV2[^\]]*\]')
+
+-- 3️⃣ Check the extracted value contains hkicl
+AND LOWER(
+        REGEXP_SUBSTR(
+            MSG.T_MESSAGE,
+            '\[ABIZSEV[^\]]*\]\s*([^\[]+)',
+            1, 1, NULL, 1
+        )
+    ) LIKE '%hkicl%'
+
+-- 4️⃣ Sender/Receiver logic
+AND (MSG.T_SENDER LIKE 'BARCHKHH%' OR MSG.T_RECEIVER LIKE 'BARCHKHH%')
+
+AND MSG.T_LASTOPERATOR = 'ReapplyEngine';
