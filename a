@@ -1,8 +1,18 @@
-WHERE INSTR(msg.T_MESSAGE, '[P_IDA_BIC') > 0
-AND SUBSTR(
-      msg.T_MESSAGE,
-      INSTR(msg.T_MESSAGE, '[P_IDA_BIC') 
-      + LENGTH('[P_IDA_BIC   X]') + 3,
-      2
-    ) = 'BE'
-AND ROWNUM < 2
+WHERE
+  REGEXP_INSTR(
+    DBMS_LOB.SUBSTR(msg.T_MESSAGE, 4000, 1),
+    '\[P_IDA_BIC\s+X\]',
+    1, 1, 0, 'i'
+  ) > 0
+AND
+  SUBSTR(
+    DBMS_LOB.SUBSTR(msg.T_MESSAGE, 4000, 1),
+    REGEXP_INSTR(
+      DBMS_LOB.SUBSTR(msg.T_MESSAGE, 4000, 1),
+      '\[P_IDA_BIC\s+X\]',
+      1, 1, 0, 'i'
+    )
+    + LENGTH('[P_IDA_BIC   X]')
+    + 3,
+    2
+  ) = 'BE'
