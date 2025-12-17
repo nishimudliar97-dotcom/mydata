@@ -1,0 +1,8 @@
+WHERE INSTR(msg.T_MESSAGE, '[P_IDA_BIC') > 0
+AND SUBSTR(
+      msg.T_MESSAGE,
+      INSTR(msg.T_MESSAGE, '[P_IDA_BIC') 
+      + LENGTH('[P_IDA_BIC   X]') + 3,
+      2
+    ) = 'BE'
+AND ROWNUM < 2
