@@ -1,0 +1,90 @@
+import pandas as pd
+import re
+import os
+
+# ================= CONFIG ================= #
+
+INPUT_EXCEL_PATH = r"C:\Users\B01585850\OneDrive - Barclays Bank PLC\Documents\Project\FCSDA-3081\Final Codes\CSV\SECO.xlsx"
+OUTPUT_EXCEL_PATH = r"C:\Users\B01585850\OneDrive - Barclays Bank PLC\Documents\Project\FCSDA-3081\Final Codes\CSV\SECO_ES_filtered.xlsx"
+
+TAGS_TO_CHECK = [
+    "P_IDA_BIC",
+    "P_IGA_BIC",
+    "IGINDFBIC",
+    "IGINGFBIC"
+]
+
+TARGET_CODE = "ES"   # <-- Change to MC / ES / FR etc if needed
+
+# ========================================== #
+
+
+def has_code_at_5th_6th(value):
+    """
+    Checks if 5th and 6th characters equal TARGET_CODE
+    """
+    if isinstance(value, str) and len(value) >= 6:
+        return value[4:6] == TARGET_CODE
+    return False
+
+
+def extract_tag_values(message, tags):
+    """
+    Extract values following patterns like:
+    [TAG X] VALUE
+    [TAG] VALUE
+    """
+    values = []
+
+    if not isinstance(message, str):
+        return values
+
+    for tag in tags:
+        pattern = rf"\[{tag}\s*(?:X)?\s*\]\s*([A-Z0-9]+)"
+        matches = re.findall(pattern, message)
+        values.extend(matches)
+
+    return values
+
+
+def filter_records(df):
+    selected_rows = []
+
+    for _, row in df.iterrows():
+
+        sender = row.get("T_SENDER", "")
+        receiver = row.get("T_RECEIVER", "")
+        message = row.get("T_MESSAGE", "")
+
+        # ---- OR CONDITIONS ----
+        sender_match = has_code_at_5th_6th(sender)
+        receiver_match = has_code_at_5th_6th(receiver)
+
+        tag_values = extract_tag_values(message, TAGS_TO_CHECK)
+        tag_match = any(has_code_at_5th_6th(val) for val in tag_values)
+
+        if sender_match or receiver_match or tag_match:
+            selected_rows.append(row)
+
+    return pd.DataFrame(selected_rows)
+
+
+def main():
+    # Read Excel
+    df = pd.read_excel(INPUT_EXCEL_PATH, dtype=str)
+
+    # Apply filtering
+    filtered_df = filter_records(df)
+
+    # Ensure output directory exists
+    os.makedirs(os.path.dirname(OUTPUT_EXCEL_PATH), exist_ok=True)
+
+    # Save output
+    filtered_df.to_excel(OUTPUT_EXCEL_PATH, index=False)
+
+    print(f"✅ Filtered file created at: {OUTPUT_EXCEL_PATH}")
+    print(f"📊 Total records selected: {len(filtered_df)}")
+
+
+if __name__ == "__main__":
+    main()
