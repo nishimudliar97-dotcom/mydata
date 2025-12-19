@@ -1,0 +1,85 @@
+import pandas as pd
+import re
+
+# ================= CONFIG ================= #
+
+INPUT_CSV_PATH = r"C:\Users\B01585850\OneDrive - Barclays Bank PLC\Documents\Project\FCSDA-3081\Final Codes\CSV\SECO.csv"
+
+TAGS_TO_CHECK = [
+    "P_IDA_BIC",
+    "P_IGA_BIC",
+    "IGINDFBIC",
+    "IGINGFBIC"
+]
+
+TARGET_CODES = {"FR", "MC"}   # 5th & 6th characters
+
+# ========================================== #
+
+
+def has_code_at_5th_6th(value):
+    """Check if 5th and 6th characters are FR or MC"""
+    if isinstance(value, str) and len(value) >= 6:
+        return value[4:6] in TARGET_CODES
+    return False
+
+
+def extract_tag_values(message, tags):
+    """
+    Extract values after tags like:
+    [TAG X] VALUE
+    [TAG] VALUE
+    """
+    if not isinstance(message, str):
+        return []
+
+    values = []
+    for tag in tags:
+        pattern = rf"\[{tag}\s*(?:X)?\s*\]\s*([A-Z0-9]+)"
+        values.extend(re.findall(pattern, message))
+    return values
+
+
+def filter_records(df):
+    selected_rows = []
+
+    for row in df.itertuples(index=False):
+        sender = getattr(row, "T_SENDER", "")
+        receiver = getattr(row, "T_RECEIVER", "")
+        message = getattr(row, "T_MESSAGE", "")
+
+        sender_match = has_code_at_5th_6th(sender)
+        receiver_match = has_code_at_5th_6th(receiver)
+
+        tag_values = extract_tag_values(message, TAGS_TO_CHECK)
+        tag_match = any(has_code_at_5th_6th(val) for val in tag_values)
+
+        # -------- PURE OR LOGIC --------
+        if sender_match or receiver_match or tag_match:
+            selected_rows.append(row)
+
+    return pd.DataFrame(selected_rows, columns=df.columns)
+
+
+def main():
+    # Read CSV (Excel-saved CSVs need latin1/cp1252)
+    df = pd.read_csv(
+        INPUT_CSV_PATH,
+        dtype=str,
+        encoding="latin1",
+        usecols=["MSGS", "T_SENDER", "T_RECEIVER", "T_MESSAGE"]
+    )
+
+    filtered_df = filter_records(df)
+
+    # -------- COUNTS ONLY --------
+    total_filtered_records = len(filtered_df)
+    unique_msgs_count = filtered_df["MSGS"].nunique()
+
+    print("✅ Filtering completed")
+    print(f"📊 Total filtered records : {total_filtered_records}")
+    print(f"📩 Unique MSGS count      : {unique_msgs_count}")
+
+
+if __name__ == "__main__":
+    main()
