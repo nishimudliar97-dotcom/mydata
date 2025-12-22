@@ -1,0 +1,59 @@
+import pandas as pd
+import re
+
+# ================= CONFIG ================= #
+
+INPUT_CSV_PATH = r"C:\path\to\input.csv"
+
+SENDER_PREFIX = "BARCCHGG"
+TAG_NAME = "IGINGDFBIC"
+TAG_VALUE = "BARCCHGG"
+MESSAGE_CONTAINS = "BARCAE"
+
+# ========================================== #
+
+
+def sender_matches(sender):
+    """T_SENDER starts with given prefix"""
+    return isinstance(sender, str) and sender.startswith(SENDER_PREFIX)
+
+
+def tag_matches(message):
+    """
+    Match [IGINGDFBIC = BARCCHGG] inside T_MESSAGE
+    Allows flexible spaces
+    """
+    if not isinstance(message, str):
+        return False
+
+    pattern = rf"\[{TAG_NAME}\s*=\s*{TAG_VALUE}\]"
+    return re.search(pattern, message) is not None
+
+
+def message_contains(message):
+    """Simple substring check"""
+    return isinstance(message, str) and MESSAGE_CONTAINS in message
+
+
+def main():
+    df = pd.read_csv(
+        INPUT_CSV_PATH,
+        dtype=str,
+        encoding="latin1"
+    )
+
+    filtered_df = df[
+        df["T_SENDER"].apply(sender_matches)
+        & df["T_MESSAGE"].apply(tag_matches)
+        & df["T_MESSAGE"].apply(message_contains)
+    ]
+
+    print("✅ Filtering completed")
+    print(f"📊 Total records matched : {len(filtered_df)}")
+
+    if len(filtered_df) > 0:
+        print(f"📩 Unique MSGS count     : {filtered_df['MSGS'].nunique()}")
+
+
+if __name__ == "__main__":
+    main()
