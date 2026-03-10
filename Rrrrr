@@ -1,0 +1,6 @@
+AI-Powered Engineering Specification Assistant (LLM + RAG)
+
+Resume Points:
+	•	Developed an AI-driven engineering assistant using LLM prompt tuning and classification models to automatically evaluate whether customer compressor specifications are technically feasible.
+	•	Implemented a Retrieval Augmented Generation (RAG) pipeline with vectorized engineering manuals, API standards, and internal technical documents to generate context-aware explanations for infeasible specifications.
+	•	Reduced manual lookup effort for engineers by enabling instant AI-powered responses grounded in engineering knowledge bases, improving response speed and technical accuracy.
