@@ -5,3 +5,12 @@ Sub-area: Feature implementation research
 Actions done today: Explored methods to map LLM-extracted text to document positions and tested Python libraries for bounding box extraction
 Progress so far: Identified approach to return text coordinates with extracted fields in JSON for evidence highlighting using PyMuPDF
 Expected completion: Continue refinement and aim to finalize implementation approach by tomorrow
+
+
+27/03/2026
+
+Area of work: Backend
+Sub-area: Chunking strategy optimization for improved context handling
+Actions done today: Worked on refining chunking approaches to better capture context and improve data retrieval/extraction accuracy
+Progress so far: Identified more effective chunking patterns to enhance prompt performance and extraction quality
+Expected completion: Further tuning and validation of chunking strategy in next iteration
