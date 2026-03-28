@@ -1,0 +1,79 @@
+import pandas as pd
+import re
+import os
+
+# ---------------- CONFIG ---------------- #
+INPUT_CSV_PATH = r"C:\input\input_file.csv"
+OUTPUT_EXCEL_PATH = r"C:\output\filtered_output.xlsx"
+
+TAGS_TO_CHECK = [
+    "P_IDA_BIC",
+    "P_IGA_BIC",
+    "IGINDFBIC",
+    "IGINGFBIC"
+]
+# ---------------------------------------- #
+
+def has_mc_at_4th_5th(value):
+    """
+    Checks if 4th and 5th characters are 'MC'
+    """
+    if isinstance(value, str) and len(value) >= 5:
+        return value[3:5] == "MC"
+    return False
+
+
+def extract_tag_values(message, tags):
+    """
+    Extract values following [TAG] in T_MESSAGE
+    """
+    values = []
+    if not isinstance(message, str):
+        return values
+
+    for tag in tags:
+        pattern = rf"\[{tag}\]\s*([A-Z0-9]+)"
+        matches = re.findall(pattern, message)
+        values.extend(matches)
+
+    return values
+
+
+def filter_records(df):
+    selected_rows = []
+
+    for _, row in df.iterrows():
+
+        # ---- Condition 1 ----
+        sender_match = has_mc_at_4th_5th(row.get("T_SENDER", ""))
+        receiver_match = has_mc_at_4th_5th(row.get("T_RECEIVER", ""))
+
+        # ---- Condition 2 ----
+        tag_values = extract_tag_values(row.get("T_MESSAGE", ""), TAGS_TO_CHECK)
+        tag_match = any(has_mc_at_4th_5th(val) for val in tag_values)
+
+        if sender_match or receiver_match or tag_match:
+            selected_rows.append(row)
+
+    return pd.DataFrame(selected_rows)
+
+
+def main():
+    # Read CSV
+    df = pd.read_csv(INPUT_CSV_PATH, dtype=str)
+
+    # Apply filtering
+    filtered_df = filter_records(df)
+
+    # Create output directory if not exists
+    os.makedirs(os.path.dirname(OUTPUT_EXCEL_PATH), exist_ok=True)
+
+    # Save to Excel
+    filtered_df.to_excel(OUTPUT_EXCEL_PATH, index=False)
+
+    print(f"✅ Filtered file created at: {OUTPUT_EXCEL_PATH}")
+    print(f"📊 Total records selected: {len(filtered_df)}")
+
+
+if __name__ == "__main__":
+    main()
