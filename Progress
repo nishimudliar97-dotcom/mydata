@@ -14,3 +14,11 @@ Sub-area: Chunking strategy optimization for improved context handling
 Actions done today: Worked on refining chunking approaches to better capture context and improve data retrieval/extraction accuracy
 Progress so far: Identified more effective chunking patterns to enhance prompt performance and extraction quality
 Expected completion: Further tuning and validation of chunking strategy in next iteration
+
+30/03/2026
+
+Area of work: Backend
+Sub-area: Retrieval technique optimization (R&D)
+Actions done today: Explored and experimented with different retrieval approaches to improve response quality
+Progress so far: Identified potential improvements in retrieval strategies for better accuracy and relevance
+Expected completion: Continue evaluation and integrate optimized retrieval approach in next steps
