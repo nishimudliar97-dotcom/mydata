@@ -7,7 +7,7 @@ def build_context(chunks):
 
         chunk_id = metadata.get("chunk_id", "")
         heading = metadata.get("heading", "")
-        document_id = metadata.get("document_id", "")
+        document_id = metadata.get("document", "")
         category = metadata.get("category", "")
 
         block = f"""
