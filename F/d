@@ -1,7 +1,10 @@
 import json
+import os
 import re
 import unicodedata
 from difflib import SequenceMatcher
+
+import fitz  # PyMuPDF
 
 
 def normalize_text(text):
@@ -130,40 +133,6 @@ def score_match(target_norm, candidate_norm):
     return SequenceMatcher(None, target_norm, candidate_norm).ratio()
 
 
-def build_coordinate_objects_from_lines(lines_subset):
-    page_to_bboxes = {}
-
-    for line in lines_subset:
-        page = line.get("page")
-        bbox = line.get("bbox")
-
-        print("Coordinate build line:", line)
-        print("Page:", page, "BBox:", bbox, "BBox type:", type(bbox))
-
-        if page is None or bbox is None:
-            continue
-
-        if not isinstance(bbox, (list, tuple)) or len(bbox) != 4:
-            continue
-
-        bbox = [float(x) for x in bbox]
-        page_to_bboxes.setdefault(page, []).append(bbox)
-
-    coordinates = []
-    for page, bboxes in page_to_bboxes.items():
-        merged_bbox = merge_bboxes(bboxes)
-        if merged_bbox is not None:
-            coordinates.append(
-                {
-                    "Page": page,
-                    "B_Box": merged_bbox
-                }
-            )
-
-    coordinates.sort(key=lambda x: x["Page"])
-    return coordinates
-
-
 def deduplicate_coordinates(coordinates):
     unique_coordinates = []
     seen = set()
@@ -198,59 +167,49 @@ def deduplicate_coordinates(coordinates):
     return unique_coordinates
 
 
-def find_value_coordinates_in_chunk(chunk, extracted_value):
-    if chunk is None or extracted_value is None:
-        return []
+def rect_to_list(rect):
+    return [float(rect.x0), float(rect.y0), float(rect.x1), float(rect.y1)]
 
-    metadata = getattr(chunk, "metadata", {})
-    lines = metadata.get("lines", [])
 
-    print("----- DEBUG COORDINATE MATCHING -----")
-    print("Extracted value:", extracted_value)
-    print("Chunk found:", chunk is not None)
-    print("Chunk metadata keys:", metadata.keys())
-    print("Lines present:", "lines" in metadata)
-    print("Lines type:", type(lines))
+def rect_distance(rect_bbox, line_bbox):
+    if not line_bbox:
+        return 10**9
 
-    if not isinstance(lines, list) or not lines:
-        print("No valid lines found in metadata.")
-        return []
+    rx0, ry0, rx1, ry1 = rect_bbox
+    lx0, ly0, lx1, ly1 = line_bbox
 
-    print("Total lines in chunk:", len(lines))
+    rect_cx = (rx0 + rx1) / 2
+    rect_cy = (ry0 + ry1) / 2
+    line_cx = (lx0 + lx1) / 2
+    line_cy = (ly0 + ly1) / 2
 
+    return ((rect_cx - line_cx) ** 2 + (rect_cy - line_cy) ** 2) ** 0.5
+
+
+def get_candidate_line_matches(lines, extracted_value):
     target_norm = normalize_for_match(extracted_value)
-
     if not target_norm:
-        print("Target normalized value is empty.")
         return []
 
-    matched_coordinates = []
+    matched_lines = []
 
-    # 1) Strong exact / substring single-line matching
-    for idx, line in enumerate(lines):
+    # Single line matches
+    for line in lines:
         line_text = str(line.get("text", ""))
         line_norm = normalize_for_match(line_text)
-
-        print(f"Line {idx + 1}: {line_text}")
-        print("Normalized line:", line_norm)
-        print("Target:", target_norm)
 
         if not line_norm:
             continue
 
         if target_norm == line_norm or target_norm in line_norm or line_norm in target_norm:
-            print("Matched using exact/substring line logic.")
-            matched_coordinates.extend(build_coordinate_objects_from_lines([line]))
+            matched_lines.append([line])
             continue
 
-        score = SequenceMatcher(None, target_norm, line_norm).ratio()
-        print("Line score:", score)
-
+        score = score_match(target_norm, line_norm)
         if score >= 0.85:
-            print("Matched using fuzzy single-line logic.")
-            matched_coordinates.extend(build_coordinate_objects_from_lines([line]))
+            matched_lines.append([line])
 
-    # 2) Consecutive multi-line matching
+    # Multi-line matches
     max_window = min(5, len(lines))
     for window_size in range(2, max_window + 1):
         for i in range(len(lines) - window_size + 1):
@@ -262,20 +221,177 @@ def find_value_coordinates_in_chunk(chunk, extracted_value):
                 continue
 
             if target_norm == combined_norm or target_norm in combined_norm or combined_norm in target_norm:
-                print(f"Matched using exact/substring multi-line logic: lines {i + 1} to {i + window_size}")
-                matched_coordinates.extend(build_coordinate_objects_from_lines(line_group))
+                matched_lines.append(line_group)
                 continue
 
-            score = SequenceMatcher(None, target_norm, combined_norm).ratio()
-            print(f"Multi-line score ({i + 1}-{i + window_size}):", score)
-
+            score = score_match(target_norm, combined_norm)
             if score >= 0.82:
-                print(f"Matched using fuzzy multi-line logic: lines {i + 1} to {i + window_size}")
-                matched_coordinates.extend(build_coordinate_objects_from_lines(line_group))
+                matched_lines.append(line_group)
 
-    matched_coordinates = deduplicate_coordinates(matched_coordinates)
-    print("Final matched coordinates:", matched_coordinates)
-    return matched_coordinates
+    return matched_lines
+
+
+def build_line_level_fallback_coordinates(matched_line_groups):
+    coordinates = []
+
+    for line_group in matched_line_groups:
+        page_to_bboxes = {}
+
+        for line in line_group:
+            page = line.get("page")
+            bbox = line.get("bbox")
+
+            if page is None or bbox is None:
+                continue
+
+            if not isinstance(bbox, (list, tuple)) or len(bbox) != 4:
+                continue
+
+            bbox = [float(x) for x in bbox]
+            page_to_bboxes.setdefault(page, []).append(bbox)
+
+        for page, bboxes in page_to_bboxes.items():
+            merged_bbox = merge_bboxes(bboxes)
+            if merged_bbox is not None:
+                coordinates.append(
+                    {
+                        "Page": page,
+                        "B_Box": merged_bbox
+                    }
+                )
+
+    return deduplicate_coordinates(coordinates)
+
+
+def search_exact_value_in_pdf(pdf_path, candidate_pages_with_bboxes, extracted_value):
+    if not pdf_path or not os.path.exists(pdf_path):
+        return []
+
+    if not extracted_value or not isinstance(extracted_value, str):
+        return []
+
+    exact_coordinates = []
+
+    try:
+        doc = fitz.open(pdf_path)
+
+        for page_number, nearby_line_bbox in candidate_pages_with_bboxes:
+            if page_number < 1 or page_number > len(doc):
+                continue
+
+            page = doc[page_number - 1]
+            rects = page.search_for(extracted_value)
+
+            if not rects:
+                continue
+
+            rect_bbox_list = [rect_to_list(rect) for rect in rects]
+
+            # If a nearby line bbox is known, sort results by closeness to that line
+            if nearby_line_bbox is not None:
+                rect_bbox_list.sort(key=lambda r: rect_distance(r, nearby_line_bbox))
+
+            for rect_bbox in rect_bbox_list:
+                exact_coordinates.append(
+                    {
+                        "Page": page_number,
+                        "B_Box": rect_bbox
+                    }
+                )
+
+        doc.close()
+    except Exception as e:
+        print(f"Error while doing exact PDF search: {e}")
+        return []
+
+    return deduplicate_coordinates(exact_coordinates)
+
+
+def build_candidate_pages_with_bboxes(matched_line_groups):
+    candidate_pages = []
+
+    for line_group in matched_line_groups:
+        page_to_bboxes = {}
+
+        for line in line_group:
+            page = line.get("page")
+            bbox = line.get("bbox")
+
+            if page is None or bbox is None:
+                continue
+
+            if not isinstance(bbox, (list, tuple)) or len(bbox) != 4:
+                continue
+
+            bbox = [float(x) for x in bbox]
+            page_to_bboxes.setdefault(page, []).append(bbox)
+
+        for page, bboxes in page_to_bboxes.items():
+            merged_bbox = merge_bboxes(bboxes)
+            candidate_pages.append((page, merged_bbox))
+
+    # deduplicate page + bbox pairs
+    seen = set()
+    unique_candidate_pages = []
+
+    for page, bbox in candidate_pages:
+        if bbox is None:
+            key = (page, None)
+        else:
+            key = (
+                page,
+                round(bbox[0], 4),
+                round(bbox[1], 4),
+                round(bbox[2], 4),
+                round(bbox[3], 4),
+            )
+
+        if key not in seen:
+            seen.add(key)
+            unique_candidate_pages.append((page, bbox))
+
+    return unique_candidate_pages
+
+
+def find_value_coordinates_in_chunk(chunk, extracted_value, pdf_root_path):
+    if chunk is None or extracted_value is None:
+        return []
+
+    metadata = getattr(chunk, "metadata", {})
+    lines = metadata.get("lines", [])
+    document_name = metadata.get("document")
+
+    print("----- DEBUG EXACT VALUE COORDINATE MATCHING -----")
+    print("Extracted value:", extracted_value)
+    print("Document name:", document_name)
+
+    if not isinstance(lines, list) or not lines:
+        print("No valid lines found in metadata.")
+        return []
+
+    # Step 1: find likely matching lines/pages
+    matched_line_groups = get_candidate_line_matches(lines, extracted_value)
+    print("Matched line groups count:", len(matched_line_groups))
+
+    if not matched_line_groups:
+        return []
+
+    # Step 2: build candidate pages from matched lines
+    candidate_pages_with_bboxes = build_candidate_pages_with_bboxes(matched_line_groups)
+    print("Candidate pages with bboxes:", candidate_pages_with_bboxes)
+
+    # Step 3: exact value search inside actual PDF
+    pdf_path = os.path.join(pdf_root_path, document_name) if document_name else None
+    exact_coordinates = search_exact_value_in_pdf(pdf_path, candidate_pages_with_bboxes, extracted_value)
+    print("Exact search coordinates:", exact_coordinates)
+
+    if exact_coordinates:
+        return exact_coordinates
+
+    # Step 4: fallback to line-level bbox if exact text search fails
+    fallback_coordinates = build_line_level_fallback_coordinates(matched_line_groups)
+    print("Fallback line-level coordinates:", fallback_coordinates)
+    return fallback_coordinates
 
 
 def build_field_output(extracted_value, selected_chunk, coordinates):
