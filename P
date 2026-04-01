@@ -1,0 +1,5 @@
+Area of work: Backend
+	2.	Sub-area: Chunk handling logic for retrieval and output display
+	3.	Actions done today: Worked on refining logic to manage chunk selection and improve retrieval-output mapping
+	4.	Progress so far: Improved handling of chunks for better relevance and structured output display
+	5.	Expected completion: Further optimization and validation in upcoming iterations
