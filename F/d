@@ -1,124 +1,76 @@
-from asyncio.windows_events import NULL
-import json
-import time
+def find_value_coordinates_in_chunk(chunk, extracted_value):
+    if chunk is None or extracted_value is None:
+        return []
 
-from Chunking.indexer_v2 import create_faiss_index
-from Retriever.retriever_v2 import extractor
-from Retriever.context_builder_v2 import build_context
-from Retriever.llm import run_llm
-from Fields.fields_loader import load_fields_from_json
-from Chunking.document_processing_v2 import process_all_documents
-import re
-import unicodedata
-from Database.Insert_Data import ingest_claim_core
+    metadata = getattr(chunk, "metadata", {})
+    lines = metadata.get("lines", [])
 
-from Retriever.coordinate_finder_v2 import (
-    parse_llm_output,
-    find_chunk_by_id,
-    find_value_coordinates_in_chunk,
-    build_field_output,
-)
+    print("----- DEBUG COORDINATE MATCHING -----")
+    print("Extracted value:", extracted_value)
+    print("Chunk metadata keys:", metadata.keys())
+    print("Lines type:", type(lines))
 
-PDF_PATH = "./Documents/WRSECFCAS202610297"
-FIELDS_JSON_PATH = "./Fields/fields.json"
+    if not isinstance(lines, list) or not lines:
+        print("No valid lines found in metadata.")
+        return []
 
+    print("Total lines in chunk:", len(lines))
 
-def normalize_text(text):
-    if(type(text) != str):
-        return text
+    target_norm = normalize_for_match(extracted_value)
 
-    text = unicodedata.normalize("NFKC", text)
+    if not target_norm:
+        print("Target normalized value is empty.")
+        return []
 
-    replacements = {
-        "\u202f": " ",
-        "\u00a0": " ",
-        "\u2011": "-",
-        "\u2013": "-",
-        "\u2014": "-",
-    }
+    matched_coordinates = []
 
-    for k, v in replacements.items():
-        text = text.replace(k, v)
+    # 1) Strong exact / substring line matching
+    for idx, line in enumerate(lines):
+        line_text = str(line.get("text", ""))
+        line_norm = normalize_for_match(line_text)
 
-    text = re.sub(r"\s+", " ", text)
+        print(f"Line {idx+1}: {line_text}")
+        print("Normalized line:", line_norm)
+        print("Target:", target_norm)
 
-    return text.strip()
+        if not line_norm:
+            continue
 
+        if target_norm == line_norm or target_norm in line_norm or line_norm in target_norm:
+            print("Matched using exact/substring line logic.")
+            matched_coordinates.extend(build_coordinate_objects_from_lines([line]))
+            continue
 
-def runner():
-    # Doc Ingestion and Indexing. [Working perfectly fine..............]
-    all_chunks = []
+        score = SequenceMatcher(None, target_norm, line_norm).ratio()
+        print("Line score:", score)
 
-    print("Loading PDF documents...")
-    all_chunks = process_all_documents(PDF_PATH)
-    print(f"Total chunks generated: {len(all_chunks)}")
+        if score >= 0.85:
+            print("Matched using fuzzy single-line logic.")
+            matched_coordinates.extend(build_coordinate_objects_from_lines([line]))
 
-    # print("\n" + "="*50 + "\n")
-    # for chunk in all_chunks:
-    #     print("Sample Chunk:")
-    #     print(f"Chunk id: {chunk['chunk_id']}")
-    #     print(f"Document: {chunk['document']}")
-    #     print(f"Heading: {chunk['heading']}")
-    #     print(chunk['text'])
-    #     print(f"Pages: {chunk['page_start']} - {chunk['page_end']}")
-    #     print(f"Bounding Box: {chunk['bbox']}")
-    #     print(f"Category: {chunk['category']}")
-    #     print(f"Lines: {chunk['lines']}")
-    #     print("\n" + "="*50 + "\n")
+    # 2) Consecutive multi-line matching
+    max_window = min(5, len(lines))
+    for window_size in range(2, max_window + 1):
+        for i in range(len(lines) - window_size + 1):
+            line_group = lines[i:i + window_size]
+            combined_text = " ".join(str(line.get("text", "")) for line in line_group)
+            combined_norm = normalize_for_match(combined_text)
 
-    print("Creating FAISS Index...")
-    vector_stores = create_faiss_index(all_chunks)
-    print(f"Vector stores created for categories: {list(vector_stores.keys())}")
-    print("Index created successfully!")
-    # ------------------------------------------------------------------
+            if not combined_norm:
+                continue
 
-    print("\nExtraction process started...")
-    #Data Retrieval and Extraction using LLM.
-    final_output = {}
-    print("\nLoading fields to extract...")
-    fields_list = load_fields_from_json(FIELDS_JSON_PATH)
+            if target_norm == combined_norm or target_norm in combined_norm or combined_norm in target_norm:
+                print(f"Matched using exact/substring multi-line logic: lines {i+1} to {i+window_size}")
+                matched_coordinates.extend(build_coordinate_objects_from_lines(line_group))
+                continue
 
-    print(f"Fields to extract: {[field['field_name'] for field in fields_list]}")
-    for field in fields_list:
-        # if(field['operation_type'] != "summarize"):
-        #     print(f"Skipping field: {field['field_name']}...")
-        #     continue
+            score = SequenceMatcher(None, target_norm, combined_norm).ratio()
+            print(f"Multi-line score ({i+1}-{i+window_size}):", score)
 
-        print(f"\nExtracting field: {field['field_name']}...")
+            if score >= 0.82:
+                print(f"Matched using fuzzy multi-line logic: lines {i+1} to {i+window_size}")
+                matched_coordinates.extend(build_coordinate_objects_from_lines(line_group))
 
-        retrieved_chunks = extractor(vector_stores, field)
-
-        context = build_context(retrieved_chunks)
-
-        print(context)
-        print("\n \n \n")
-
-        raw_llm_output = run_llm(field, context)
-        parsed_llm_output = parse_llm_output(raw_llm_output)
-
-        extracted_value = parsed_llm_output.get("value")
-        selected_chunk_id = parsed_llm_output.get("chunk_id")
-
-        selected_chunk = find_chunk_by_id(retrieved_chunks, selected_chunk_id)
-        coordinates = find_value_coordinates_in_chunk(selected_chunk, extracted_value)
-
-        value = build_field_output(extracted_value, selected_chunk, coordinates)
-        value["Value"] = normalize_text(value.get("Value"))
-
-        final_output[field['field_name']] = value
-
-        print(f"Extracted value for {field['field_name']}: {value}")
-
-        time.sleep(120)  # Sleep for 2 minutes between requests to avoid rate limits
-
-    print(f"Here is the output.........\n{final_output}")
-    # ingest_status = ingest_claim_core(final_output)
-    # print(f"Ingestion Status: {ingest_status}")
-    # return final_output
-
-
-if __name__ == "__main__":
-    try:
-        runner()
-    except Exception as e:
-        print(f"An error occurred: {e}")
+    matched_coordinates = deduplicate_coordinates(matched_coordinates)
+    print("Final matched coordinates:", matched_coordinates)
+    return matched_coordinates
