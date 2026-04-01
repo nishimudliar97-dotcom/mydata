@@ -1,40 +1,90 @@
+import json
 import re
 import unicodedata
 from difflib import SequenceMatcher
 
 
-def normalize_text(text: str) -> str:
-    if text is None:
-        return ""
+def normalize_text(text):
+    if type(text) != str:
+        return text
 
-    text = unicodedata.normalize("NFKC", str(text))
+    text = unicodedata.normalize("NFKC", text)
 
     replacements = {
-        "\u2010": "-",
+        "\u202f": " ",
+        "\u00a0": " ",
         "\u2011": "-",
-        "\u2012": "-",
         "\u2013": "-",
         "\u2014": "-",
-        "\u2018": "'",
-        "\u2019": "'",
-        "\u201c": '"',
-        "\u201d": '"',
-        "\u00a0": " ",
-        "\t": " ",
-        "\n": " ",
-        "\r": " ",
     }
 
     for k, v in replacements.items():
         text = text.replace(k, v)
 
-    text = text.lower().strip()
     text = re.sub(r"\s+", " ", text)
-    return text
+    return text.strip()
 
 
-def fuzzy_score(a: str, b: str) -> float:
-    return SequenceMatcher(None, normalize_text(a), normalize_text(b)).ratio()
+def normalize_for_match(text):
+    if text is None:
+        return ""
+
+    text = normalize_text(text)
+    text = text.lower()
+    text = re.sub(r"[^a-z0-9]+", "", text)
+    return text.strip()
+
+
+def parse_llm_output(raw_output):
+    default_output = {"value": None, "chunk_id": None}
+
+    if raw_output is None:
+        return default_output
+
+    if isinstance(raw_output, dict):
+        data = raw_output
+    else:
+        raw_output = str(raw_output).strip()
+
+        if raw_output.startswith("```json"):
+            raw_output = raw_output[len("```json"):].strip()
+        elif raw_output.startswith("```"):
+            raw_output = raw_output[len("```"):].strip()
+
+        if raw_output.endswith("```"):
+            raw_output = raw_output[:-3].strip()
+
+        try:
+            data = json.loads(raw_output)
+        except Exception:
+            try:
+                start = raw_output.find("{")
+                end = raw_output.rfind("}")
+                if start != -1 and end != -1:
+                    data = json.loads(raw_output[start:end + 1])
+                else:
+                    return default_output
+            except Exception:
+                return default_output
+
+    normalized_keys = {}
+    for k, v in data.items():
+        key = str(k).lower().replace(" ", "").replace("_", "")
+        normalized_keys[key] = v
+
+    value = normalized_keys.get("value")
+    chunk_id = normalized_keys.get("chunkid")
+
+    if isinstance(value, str) and value.strip().lower() in {"not_found", "null", "none"}:
+        value = None
+
+    if isinstance(chunk_id, str) and chunk_id.strip().lower() in {"not_found", "null", "none"}:
+        chunk_id = None
+
+    return {
+        "value": value,
+        "chunk_id": chunk_id,
+    }
 
 
 def find_chunk_by_id(retrieved_chunks, chunk_id):
@@ -49,158 +99,170 @@ def find_chunk_by_id(retrieved_chunks, chunk_id):
     return None
 
 
-def _dedupe_coordinates(coords):
+def merge_bboxes(bboxes):
+    valid_bboxes = [bbox for bbox in bboxes if isinstance(bbox, list) and len(bbox) == 4]
+
+    if not valid_bboxes:
+        return None
+
+    return [
+        min(bbox[0] for bbox in valid_bboxes),
+        min(bbox[1] for bbox in valid_bboxes),
+        max(bbox[2] for bbox in valid_bboxes),
+        max(bbox[3] for bbox in valid_bboxes),
+    ]
+
+
+def score_match(target_norm, candidate_norm):
+    if not target_norm or not candidate_norm:
+        return 0.0
+
+    if target_norm == candidate_norm:
+        return 1.0
+
+    if target_norm in candidate_norm or candidate_norm in target_norm:
+        return 0.98
+
+    return SequenceMatcher(None, target_norm, candidate_norm).ratio()
+
+
+def build_coordinate_objects_from_lines(lines_subset):
+    page_to_bboxes = {}
+
+    for line in lines_subset:
+        page = line.get("page")
+        bbox = line.get("bbox")
+
+        if page is None or bbox is None:
+            continue
+
+        page_to_bboxes.setdefault(page, []).append(bbox)
+
+    coordinates = []
+    for page, bboxes in page_to_bboxes.items():
+        merged_bbox = merge_bboxes(bboxes)
+        if merged_bbox is not None:
+            coordinates.append(
+                {
+                    "Page": page,
+                    "B_Box": merged_bbox
+                }
+            )
+
+    coordinates.sort(key=lambda x: x["Page"])
+    return coordinates
+
+
+def deduplicate_coordinates(coordinates):
+    unique_coordinates = []
     seen = set()
-    deduped = []
 
-    for item in coords:
-        page = item.get("Page")
-        bbox = item.get("B_Box")
+    for coord in coordinates:
+        page = coord.get("Page")
+        bbox = coord.get("B_Box")
 
-        if bbox is None:
-            key = (page, None)
-        else:
-            key = (page, tuple(bbox))
+        if not isinstance(bbox, list) or len(bbox) != 4:
+            continue
+
+        key = (
+            page,
+            round(bbox[0], 4),
+            round(bbox[1], 4),
+            round(bbox[2], 4),
+            round(bbox[3], 4),
+        )
 
         if key not in seen:
             seen.add(key)
-            deduped.append(item)
+            unique_coordinates.append(coord)
 
-    return deduped
+    unique_coordinates.sort(key=lambda x: x["Page"])
+    return unique_coordinates
 
 
-def resolve_locations_for_value(chunk, value, evidence_text=None, fuzzy_threshold=0.88):
-    """
-    Returns a list like:
-    [
-        {"Page": 2, "B_Box": [x1, y1, x2, y2]},
-        {"Page": 3, "B_Box": [x1, y1, x2, y2]}
-    ]
-    """
-    if chunk is None:
+def find_value_coordinates_in_chunk(chunk, extracted_value):
+    if chunk is None or extracted_value is None:
         return []
 
     metadata = getattr(chunk, "metadata", {})
     lines = metadata.get("lines", [])
 
-    if not lines:
+    if not isinstance(lines, list) or not lines:
         return []
 
-    norm_value = normalize_text(value)
-    norm_evidence = normalize_text(evidence_text)
+    target_norm = normalize_for_match(extracted_value)
 
-    matches = []
+    if not target_norm:
+        return []
 
-    # 1) Exact / normalized evidence_text match on single line
-    if norm_evidence:
+    matched_coordinates = []
+
+    # 1) Single line matching
+    for line in lines:
+        line_text = line.get("text", "")
+        line_norm = normalize_for_match(line_text)
+        score = score_match(target_norm, line_norm)
+
+        if score >= 0.92:
+            matched_coordinates.extend(build_coordinate_objects_from_lines([line]))
+
+    # 2) Multi-line matching
+    max_window = min(4, len(lines))
+    for window_size in range(2, max_window + 1):
+        for i in range(len(lines) - window_size + 1):
+            line_group = lines[i:i + window_size]
+            combined_text = " ".join(str(line.get("text", "")) for line in line_group)
+            combined_norm = normalize_for_match(combined_text)
+            score = score_match(target_norm, combined_norm)
+
+            if score >= 0.90:
+                matched_coordinates.extend(build_coordinate_objects_from_lines(line_group))
+
+    # 3) Fallback best approximate group
+    if not matched_coordinates:
+        best_score = 0.0
+        best_group = None
+
         for line in lines:
             line_text = line.get("text", "")
-            norm_line = normalize_text(line_text)
+            line_norm = normalize_for_match(line_text)
+            score = score_match(target_norm, line_norm)
 
-            if norm_evidence and norm_evidence in norm_line:
-                matches.append({
-                    "Page": line.get("page"),
-                    "B_Box": line.get("bbox")
-                })
+            if score > best_score:
+                best_score = score
+                best_group = [line]
 
-        if matches:
-            return _dedupe_coordinates(matches)
+        for window_size in range(2, min(4, len(lines)) + 1):
+            for i in range(len(lines) - window_size + 1):
+                line_group = lines[i:i + window_size]
+                combined_text = " ".join(str(line.get("text", "")) for line in line_group)
+                combined_norm = normalize_for_match(combined_text)
+                score = score_match(target_norm, combined_norm)
 
-    # 2) Exact / normalized value match on single line
-    if norm_value:
-        for line in lines:
-            line_text = line.get("text", "")
-            norm_line = normalize_text(line_text)
+                if score > best_score:
+                    best_score = score
+                    best_group = line_group
 
-            if norm_value and norm_value in norm_line:
-                matches.append({
-                    "Page": line.get("page"),
-                    "B_Box": line.get("bbox")
-                })
+        if best_group is not None and best_score >= 0.75:
+            matched_coordinates.extend(build_coordinate_objects_from_lines(best_group))
 
-        if matches:
-            return _dedupe_coordinates(matches)
+    return deduplicate_coordinates(matched_coordinates)
 
-    # 3) Adjacent two-line evidence_text match
-    if norm_evidence and len(lines) > 1:
-        for i in range(len(lines) - 1):
-            line1 = lines[i]
-            line2 = lines[i + 1]
 
-            combined = f"{line1.get('text', '')} {line2.get('text', '')}"
-            norm_combined = normalize_text(combined)
+def build_field_output(extracted_value, selected_chunk, coordinates):
+    if selected_chunk is None:
+        return {
+            "Value": normalize_text(extracted_value) if extracted_value is not None else None,
+            "Document Category": None,
+            "Document ID": None,
+            "Coordinates": []
+        }
 
-            if norm_evidence in norm_combined:
-                matches.extend([
-                    {"Page": line1.get("page"), "B_Box": line1.get("bbox")},
-                    {"Page": line2.get("page"), "B_Box": line2.get("bbox")},
-                ])
+    metadata = getattr(selected_chunk, "metadata", {})
 
-        if matches:
-            return _dedupe_coordinates(matches)
-
-    # 4) Adjacent two-line value match
-    if norm_value and len(lines) > 1:
-        for i in range(len(lines) - 1):
-            line1 = lines[i]
-            line2 = lines[i + 1]
-
-            combined = f"{line1.get('text', '')} {line2.get('text', '')}"
-            norm_combined = normalize_text(combined)
-
-            if norm_value in norm_combined:
-                matches.extend([
-                    {"Page": line1.get("page"), "B_Box": line1.get("bbox")},
-                    {"Page": line2.get("page"), "B_Box": line2.get("bbox")},
-                ])
-
-        if matches:
-            return _dedupe_coordinates(matches)
-
-    # 5) Fuzzy evidence_text fallback
-    if norm_evidence:
-        scored = []
-        for line in lines:
-            line_text = line.get("text", "")
-            score = fuzzy_score(norm_evidence, line_text)
-            scored.append((score, line))
-
-        scored.sort(key=lambda x: x[0], reverse=True)
-
-        if scored and scored[0][0] >= fuzzy_threshold:
-            best_score = scored[0][0]
-
-            for score, line in scored:
-                if score >= best_score - 0.02:
-                    matches.append({
-                        "Page": line.get("page"),
-                        "B_Box": line.get("bbox")
-                    })
-
-            if matches:
-                return _dedupe_coordinates(matches)
-
-    # 6) Fuzzy value fallback
-    if norm_value:
-        scored = []
-        for line in lines:
-            line_text = line.get("text", "")
-            score = fuzzy_score(norm_value, line_text)
-            scored.append((score, line))
-
-        scored.sort(key=lambda x: x[0], reverse=True)
-
-        if scored and scored[0][0] >= fuzzy_threshold:
-            best_score = scored[0][0]
-
-            for score, line in scored:
-                if score >= best_score - 0.02:
-                    matches.append({
-                        "Page": line.get("page"),
-                        "B_Box": line.get("bbox")
-                    })
-
-            if matches:
-                return _dedupe_coordinates(matches)
-
-    return []
+    return {
+        "Value": normalize_text(extracted_value) if extracted_value is not None else None,
+        "Document Category": metadata.get("category"),
+        "Document ID": metadata.get("document"),
+        "Coordinates": coordinates
+    }
