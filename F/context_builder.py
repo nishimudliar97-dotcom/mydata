@@ -1,25 +1,25 @@
 def build_context(chunks):
-    print("\nBuilding lightweight context from retrieved chunks...")
-    context_parts = []
+    try:
+        print("\nBuilding context from retrieved chunks...")
+        context = ""
 
-    for chunk in chunks:
-        metadata = getattr(chunk, "metadata", {})
+        for chunk in chunks:
+            body = chunk.page_content.split("\n", 1)[1] if "\n" in chunk.page_content else chunk.page_content
 
-        chunk_id = metadata.get("chunk_id", "")
-        heading = metadata.get("heading", "")
-        document_id = metadata.get("document", "")
-        category = metadata.get("category", "")
+            context += f"""
+------------------------------
+Chunk ID: {chunk.metadata.get('chunk_id')}
+Document: {chunk.metadata.get('document')}
+Category: {chunk.metadata.get('category')}
+Heading: {chunk.metadata.get('heading')}
+Pages: {chunk.metadata.get('page_start')} - {chunk.metadata.get('page_end')}
 
-        block = f"""
-[CHUNK_ID: {chunk_id}]
-[DOCUMENT_ID: {document_id}]
-[CATEGORY: {category}]
-[HEADING: {heading}]
-{chunk.page_content}
-""".strip()
+Body:
+{body}
+"""
 
-        context_parts.append(block)
+    except Exception as e:
+        print(f"An error occurred while building context: {e}")
+        context = ""
 
-    context = "\n\n" + ("\n" + "=" * 80 + "\n\n").join(context_parts)
-    print(context)
     return context
