@@ -1,6 +1,8 @@
 import os
+import re
+import json
 from dotenv import load_dotenv
-import tiktoken
+from asyncio.windows_events import NULL
 
 from Prompt.prompt_v4 import SYSTEM_EXTRACTION_PROMPT, SYSTEM_SUMMARIZATION_PROMPT
 from langchain_core.prompts import ChatPromptTemplate
@@ -34,36 +36,35 @@ DOCUMENT CONTEXT:
 """.strip()
 
 
-def _get_token_encoding():
-    try:
-        return tiktoken.encoding_for_model("gpt-4o")
-    except Exception:
-        return tiktoken.get_encoding("cl100k_base")
+def _extract_json_block(text: str) -> str:
+    if not isinstance(text, str):
+        return ""
 
+    text = text.strip()
 
-def _clean_llm_output(result: str) -> str:
-    if not isinstance(result, str):
-        return '{"value": null, "chunk_id": null}'
+    fenced_match = re.search(r"```(?:json)?\s*(\{.*\})\s*```", text, re.DOTALL)
+    if fenced_match:
+        return fenced_match.group(1).strip()
 
-    result = result.strip()
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        return text[start:end + 1].strip()
 
-    if result.startswith("```json"):
-        result = result[len("```json"):].strip()
-    elif result.startswith("```"):
-        result = result[len("```"):].strip()
-
-    if result.endswith("```"):
-        result = result[:-3].strip()
-
-    return result
+    return text
 
 
 def run_llm(field, context):
     try:
         print(f"Running LLM for field: {field['field_name']}...")
 
-        SYSTEM_PROMPT = EXTRACTION_PROMPT if field["operation_type"] == "extract" else SUMMARISATION_PROMPT
-        temperature = 0 if field["operation_type"] == "extract" else 0.2
+        system_prompt = (
+            EXTRACTION_PROMPT
+            if field["operation_type"] == "extract"
+            else SUMMARISATION_PROMPT
+        )
+
+        temperature = 0 if field["operation_type"] == "extract" else 0.6
 
         llm = ChatGroq(
             model="openai/gpt-oss-120b",
@@ -73,7 +74,7 @@ def run_llm(field, context):
 
         prompt = ChatPromptTemplate.from_messages(
             [
-                ("system", SYSTEM_PROMPT),
+                ("system", system_prompt),
                 ("human", USER_PROMPT),
             ]
         )
@@ -91,24 +92,7 @@ def run_llm(field, context):
             | StrOutputParser()
         )
 
-        message = prompt.format_messages(
-            field_name=field["field_name"],
-            field_description=field["description"],
-            field_possible_names=field["possible_names"],
-            value_format=field["value_format"],
-            context=context,
-        )
-
-        full_prompt_text = "\n".join([msg.content for msg in message])
-
-        encoding = _get_token_encoding()
-        tokens_message = encoding.encode(full_prompt_text)
-
-        print(f"Total tokens in the message: {len(tokens_message)}")
-        print(f"Total characters in the message: {len(full_prompt_text)}")
-        print(f"Message: {full_prompt_text}")
-
-        result = extraction_chain.invoke(
+        raw_result = extraction_chain.invoke(
             {
                 "field_name": field["field_name"],
                 "field_description": field["description"],
@@ -118,9 +102,26 @@ def run_llm(field, context):
             }
         )
 
-        result = _clean_llm_output(result)
+        print(f"Raw LLM output: {raw_result}")
+
+        json_text = _extract_json_block(raw_result)
+        parsed = json.loads(json_text)
+
+        result = {
+            "Value": parsed.get("Value"),
+            "Chunk ID": parsed.get("Chunk ID"),
+            "Page Number": parsed.get("Page Number"),
+        }
+
+        if result["Value"] in ["NOT_FOUND", "NULL", "Null", "null"]:
+            result["Value"] = None
+
         return result
 
     except Exception as e:
         print(f"An error occurred while running LLM: {e}")
-        return '{"value": null, "chunk_id": null}'
+        return {
+            "Value": None,
+            "Chunk ID": None,
+            "Page Number": None,
+        }
