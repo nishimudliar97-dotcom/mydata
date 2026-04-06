@@ -156,11 +156,7 @@ def split_coverage_candidates(value: str):
     return [p.strip(" '\"") for p in parts if p and p.strip()]
 
 
-def canonicalize_coverage_value(value):
-    if not value:
-        return value
-
-    candidates = split_coverage_candidates(value)
+def canonicalize_coverage_candidates(candidates):
     canonical_values = []
     seen = set()
 
@@ -177,6 +173,16 @@ def canonicalize_coverage_value(value):
         if mapped and mapped not in seen:
             seen.add(mapped)
             canonical_values.append(mapped)
+
+    return canonical_values
+
+
+def canonicalize_coverage_value(value):
+    if not value:
+        return value
+
+    candidates = split_coverage_candidates(value)
+    canonical_values = canonicalize_coverage_candidates(candidates)
 
     if not canonical_values:
         return value
@@ -209,6 +215,49 @@ def looks_like_policy_listing_only(llm_result):
         return True
 
     return False
+
+
+def extract_aliases_from_lines(lines):
+    if not lines:
+        return []
+
+    joined = " ".join(str(x) for x in lines)
+    candidates = split_coverage_candidates(joined)
+    canonical_values = canonicalize_coverage_candidates(candidates)
+    return canonical_values
+
+
+def validate_coverage_value_against_lines(llm_result):
+    """
+    Important rule:
+    Only trust coverage mappings that are explicitly present in the exact
+    supporting lines returned by the LLM.
+    """
+    value = llm_result.get("Value")
+    lines = llm_result.get("lines") or []
+
+    if not value or not lines:
+        return llm_result
+
+    # Reject obvious policy listing evidence
+    if looks_like_policy_listing_only(llm_result):
+        llm_result["Value"] = None
+        llm_result["Chunk_id"] = None
+        llm_result["lines"] = None
+        return llm_result
+
+    canonical_from_lines = extract_aliases_from_lines(lines)
+
+    # If supporting lines do not explicitly contain any coverage alias/name,
+    # do not allow value inferred from other nearby lines in the chunk.
+    if not canonical_from_lines:
+        llm_result["Value"] = None
+        llm_result["Chunk_id"] = None
+        llm_result["lines"] = None
+        return llm_result
+
+    llm_result["Value"] = "[" + ", ".join(canonical_from_lines) + "]"
+    return llm_result
 
 
 def runner():
@@ -252,12 +301,7 @@ def runner():
             llm_result["Value"] = normalize_text(llm_result["Value"])
 
         if is_coverage_triggered_field(field["field_name"]):
-            if looks_like_policy_listing_only(llm_result):
-                llm_result["Value"] = None
-                llm_result["Chunk_id"] = None
-                llm_result["lines"] = None
-            elif llm_result.get("Value"):
-                llm_result["Value"] = canonicalize_coverage_value(llm_result["Value"])
+            llm_result = validate_coverage_value_against_lines(llm_result)
 
         resolved_output = resolve_line_bboxes(
             llm_result=llm_result,
