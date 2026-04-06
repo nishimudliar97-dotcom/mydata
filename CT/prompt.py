@@ -92,7 +92,10 @@ For the field "Coverage Triggered":
    - insuring clauses
    unless the same text explicitly says those sections are engaged for this loss event.
 
-3. Expand abbreviations and aliases to canonical coverage names when clearly supported by the text.
+3. Only extract and map coverage aliases that are explicitly present in the exact supporting lines you return.
+   Do NOT infer coverage names from other nearby lines in the same chunk.
+
+4. Expand abbreviations and aliases to canonical coverage names only when clearly present in the exact supporting lines.
    Examples:
    - PD -> Property Damage
    - BI -> Business Interruption
@@ -100,27 +103,29 @@ For the field "Coverage Triggered":
    - Property Damage (All Risks) -> Property Damage
    - Business Interruption - Gross Rentals -> Business Interruption
 
-4. Exclude any coverage explicitly stated as not engaged, not triggered, not applicable, excluded, or otherwise not responding.
+5. Exclude any coverage explicitly stated as not engaged, not triggered, not applicable, excluded, or otherwise not responding.
 
-5. Return only the canonical triggered coverage names in the Value field.
+6. If the supporting line contains only peril/cause wording and no explicit coverage alias/name, return null.
+
+7. Return only the canonical triggered coverage names in the Value field.
    Keep Chunk_id and lines grounded in the exact source chunk.
 
-6. If the text only lists policy sections available under the policy, return null.
+8. If the text only lists policy sections available under the policy, return null.
 
 OUTPUT (STRICT JSON):
-{
+{{
   "Value": "<value_or_null>",
   "Chunk_id": "<uuid_or_null>",
   "lines": ["<exact_lines_from_chunk>"]
-}
+}}
 
 NULL CASE:
 Return:
-{
+{{
   "Value": null,
   "Chunk_id": null,
   "lines": null
-}
+}}
 if:
 - Field not found
 - Ambiguous
@@ -198,19 +203,19 @@ If multiple candidate chunks exist:
 - Clean and normalize text
 
 OUTPUT (STRICT JSON):
-{
+{{
   "value": "<25-30 word summary or null>",
   "chunk_id": "<uuid_or_null>",
   "lines": ["<exact_lines_from_chunk>"]
-}
+}}
 
 NULL CASE:
 Return:
-{
+{{
   "value": null,
   "chunk_id": null,
   "lines": null
-}
+}}
 if:
 - No relevant information found
 - Context is empty
