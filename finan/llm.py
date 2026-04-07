@@ -1,9 +1,38 @@
+import json
+import re
+import tiktoken
+
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnablePassthrough
+from langchain_core.output_parsers import StrOutputParser
+
 from Prompt.prompt_v4 import (
     SYSTEM_EXTRACTION_PROMPT,
     SYSTEM_SUMMARIZATION_PROMPT,
     SYSTEM_CAUSE_CODE_PROMPT,
     SYSTEM_FINANCIAL_INDEMNITY_PROMPT
 )
+
+
+
+def _pick(data, *keys):
+    for key in keys:
+        if key in data:
+            return data[key]
+    return None
+
+
+def _extract_json_block(text: str) -> str:
+    text = text.strip()
+
+    if text.startswith("{") and text.endswith("}"):
+        return text
+
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+    if match:
+        return match.group(0)
+
+    raise ValueError("No valid JSON object found in LLM output")
 
 
 def _extract_currency_amount(text: str):
@@ -15,7 +44,8 @@ def _extract_currency_amount(text: str):
     patterns = [
         r'((?:USD|EUR|GBP|INR|AUD|CAD|SGD|AED|CHF|ZAR|JPY|HKD)\s*[\d,]+(?:\.\d+)?)',
         r'((?:US\$|AU\$|C\$|S\$|HK\$|₹|£|€|\$)\s*[\d,]+(?:\.\d+)?)',
-        r'([\d,]+(?:\.\d+)?\s*(?:USD|EUR|GBP|INR|AUD|CAD|SGD|AED|CHF|ZAR|JPY|HKD))'
+        r'([\d,]+(?:\.\d+)?\s*(?:USD|EUR|GBP|INR|AUD|CAD|SGD|AED|CHF|ZAR|JPY|HKD))',
+        r'([\d,]+(?:\.\d+)?)'
     ]
 
     for pattern in patterns:
@@ -53,10 +83,16 @@ def _build_financial_indemnity_value_from_lines(lines):
     return [result] if result else None
 
 
+
+
+
+
+
+
 def run_financial_indemnity_llm(context: str):
     """
     Runs LLM only to identify the single best chunk and exact supporting lines
-    for Financial Indemnity.
+    for Financial Indemnity, then builds the Value in Python.
     """
     try:
         print("Running LLM for Financial Indemnity...")
@@ -101,6 +137,8 @@ def run_financial_indemnity_llm(context: str):
             result["lines"] = [str(result["lines"])]
 
         result["Value"] = _build_financial_indemnity_value_from_lines(result["lines"])
+
+        print(f"[DEBUG] Financial Indemnity final parsed result: {json.dumps(result, indent=2)}")
 
         return result
 
