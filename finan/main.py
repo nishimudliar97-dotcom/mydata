@@ -66,7 +66,16 @@ for field in fields:
 
 
 
+retrieved_chunks = extractor(vector_stores, field)
 
+if field["field_name"] == "Financial Indemnity":
+    retrieved_chunks = rerank_financial_indemnity_chunks(retrieved_chunks)
+
+debug_print_retrieved_chunks(field["field_name"], retrieved_chunks)
+
+context = build_context(retrieved_chunks)
+
+from Retriever.retriever_v2 import extractor, rerank_financial_indemnity_chunks
 
 
 
