@@ -1,4 +1,9 @@
+import json
+
 from Retriever.llm import run_llm, run_cause_code_llm, run_financial_indemnity_llm
+from line_bbox_resolver import resolve_line_bboxes
+from Retriever.retriever_v2 import extractor, rerank_financial_indemnity_chunks
+
 
 def debug_print_retrieved_chunks(field_name, retrieved_chunks):
     print(f"\n[DEBUG] Retrieved chunks for field: {field_name}")
@@ -17,10 +22,11 @@ def debug_print_retrieved_chunks(field_name, retrieved_chunks):
         print("=" * 80)
 
 
+
+
 for field in fields:
     print(f"\nExtracting field: {field['field_name']}...")
 
-    # New special handling for Cause Code
     if field["field_name"] == "Cause Code":
         cause_code_result = run_cause_code_pipeline(vector_stores)
         final_output[field["field_name"]] = cause_code_result
@@ -29,6 +35,9 @@ for field in fields:
 
     retrieved_chunks = extractor(vector_stores, field)
 
+    if field["field_name"] == "Financial Indemnity":
+        retrieved_chunks = rerank_financial_indemnity_chunks(retrieved_chunks)
+
     debug_print_retrieved_chunks(field["field_name"], retrieved_chunks)
 
     context = build_context(retrieved_chunks)
@@ -36,10 +45,9 @@ for field in fields:
     print(context)
     print("\n \n \n")
 
-    # New special handling for Financial Indemnity
     if field["field_name"] == "Financial Indemnity":
         llm_result = run_financial_indemnity_llm(context)
-        print(f"[DEBUG] Financial Indemnity parsed result: {json.dumps(llm_result, indent=2)}")
+        print(f"[DEBUG] Financial Indemnity parsed result before resolver: {json.dumps(llm_result, indent=2)}")
 
         resolved_output = resolve_line_bboxes(
             llm_result=llm_result,
@@ -52,7 +60,7 @@ for field in fields:
 
     llm_result = run_llm(field, context)
 
-    if llm_result.get("Value") is not None:
+    if llm_result.get("Value") is not None and isinstance(llm_result["Value"], str):
         llm_result["Value"] = normalize_text(llm_result["Value"])
 
     resolved_output = resolve_line_bboxes(
@@ -63,98 +71,3 @@ for field in fields:
     final_output[field["field_name"]] = resolved_output
 
     print(f"Extracted value for {field['field_name']}: {json.dumps(resolved_output, indent=2)}")
-
-
-
-retrieved_chunks = extractor(vector_stores, field)
-
-if field["field_name"] == "Financial Indemnity":
-    retrieved_chunks = rerank_financial_indemnity_chunks(retrieved_chunks)
-
-debug_print_retrieved_chunks(field["field_name"], retrieved_chunks)
-
-context = build_context(retrieved_chunks)
-
-from Retriever.retriever_v2 import extractor, rerank_financial_indemnity_chunks
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-def normalize_financial_indemnity_value(value):
-    if not isinstance(value, list) or not value:
-        return value
-
-    first_item = value[0]
-    if not isinstance(first_item, dict):
-        return value
-
-    normalized = {}
-
-    for raw_key, raw_amount in first_item.items():
-        if raw_amount is None:
-            continue
-
-        key = str(raw_key).strip().lower()
-        key = key.replace("net", " ")
-        key = key.replace("cbe", " ")
-        key = " ".join(key.split())
-
-        if key in ["pd", "property damage"]:
-            normalized["Property Damage"] = raw_amount
-        elif key in ["bi", "business interruption"]:
-            normalized["Business Interruption"] = raw_amount
-        elif key == "stock":
-            normalized["Stock"] = raw_amount
-
-    return [normalized] if normalized else None
-
-
-
-
-retrieved_chunks = extractor(vector_stores, field)
-
-context = build_context(retrieved_chunks)
-
-print(context)
-print("\n \n \n")
-
-llm_result = run_llm(field, context)
-
-if field["field_name"] == "Financial Indemnity" and llm_result.get("Value") is not None:
-    llm_result["Value"] = normalize_financial_indemnity_value(llm_result["Value"])
-elif llm_result.get("Value") is not None and isinstance(llm_result["Value"], str):
-    llm_result["Value"] = normalize_text(llm_result["Value"])
-
-resolved_output = resolve_line_bboxes(
-    llm_result=llm_result,
-    retrieved_chunks=retrieved_chunks
-)
-
-final_output[field["field_name"]] = resolved_output
-
-print(f"Extracted value for {field['field_name']}: {json.dumps(resolved_output, indent=2)}")
