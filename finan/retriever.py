@@ -7,9 +7,10 @@ def build_query(field: Dict[str, Any]) -> str:
 
     if field_name == "financial indemnity":
         return (
-            "totals reserves total cbe reserves total current "
-            "property damage pd stock bi business interruption "
-            "net indemnity loss table reserve"
+            "quantum current best estimate quantum current best estimates "
+            "current best estimate totals and reserves total cbe and reserves "
+            "total current reserves pd property damage stock bi business interruption "
+            "net financial indemnity"
         )
 
     if operation_type == "extract":
@@ -28,3 +29,46 @@ def build_query(field: Dict[str, Any]) -> str:
 
     else:
         raise ValueError(f"Unsupported operation_type: {operation_type}")
+
+
+
+
+
+
+def rerank_financial_indemnity_chunks(chunks):
+    priority_terms = [
+        "quantum",
+        "current best estimate",
+        "totals and reserves",
+        "total cbe and reserves",
+        "total current",
+        "property damage",
+        "pd",
+        "stock",
+        "business interruption",
+        "bi",
+        "reserve"
+    ]
+
+    def score_chunk(chunk):
+        text_parts = []
+
+        if hasattr(chunk, "page_content") and chunk.page_content:
+            text_parts.append(chunk.page_content.lower())
+
+        metadata = getattr(chunk, "metadata", {}) or {}
+        for key in ["heading", "sub_heading", "heading_path", "category", "document"]:
+            value = metadata.get(key)
+            if value:
+                text_parts.append(str(value).lower())
+
+        full_text = " ".join(text_parts)
+
+        score = 0
+        for term in priority_terms:
+            if term in full_text:
+                score += 1
+
+        return score
+
+    return sorted(chunks, key=score_chunk, reverse=True)
