@@ -1,29 +1,3 @@
-import json
-
-from Retriever.llm import run_llm, run_cause_code_llm, run_financial_indemnity_llm
-from line_bbox_resolver import resolve_line_bboxes
-from Retriever.retriever_v2 import extractor, rerank_financial_indemnity_chunks
-
-
-def debug_print_retrieved_chunks(field_name, retrieved_chunks):
-    print(f"\n[DEBUG] Retrieved chunks for field: {field_name}")
-    print(f"[DEBUG] Total retrieved chunks: {len(retrieved_chunks)}")
-
-    for idx, chunk in enumerate(retrieved_chunks, start=1):
-        meta = getattr(chunk, "metadata", {})
-        print("\n" + "=" * 80)
-        print(f"[DEBUG] Chunk #{idx}")
-        print(f"[DEBUG] chunk_id: {meta.get('chunk_id')}")
-        print(f"[DEBUG] document: {meta.get('document')}")
-        print(f"[DEBUG] category: {meta.get('category')}")
-        print(f"[DEBUG] heading: {meta.get('heading')}")
-        print(f"[DEBUG] pages: {meta.get('page_start')} - {meta.get('page_end')}")
-        print(f"[DEBUG] content:\n{chunk.page_content}")
-        print("=" * 80)
-
-
-
-
 for field in fields:
     print(f"\nExtracting field: {field['field_name']}...")
 
