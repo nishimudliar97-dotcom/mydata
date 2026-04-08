@@ -1,0 +1,60 @@
+def _normalize_financial_indemnity_value(value):
+    if not isinstance(value, list) or not value:
+        return value
+
+    first_item = value[0]
+    if not isinstance(first_item, dict):
+        return value
+
+    normalized = {}
+    total_indemnity = 0
+
+    for raw_key, raw_amount in first_item.items():
+        if raw_amount is None:
+            continue
+
+        key = str(raw_key).strip().lower()
+        key = key.replace("net", "")
+        key = key.replace("cbe", "")
+        key = " ".join(key.split())
+
+        amount_str = str(raw_amount).strip()
+
+        # Remove currency words like GBP, USD, etc.
+        amount_str = re.sub(
+            r'\b(?:USD|EUR|GBP|INR|AUD|CAD|SGD|AED|CHF|ZAR|JPY|HKD)\b',
+            '',
+            amount_str,
+            flags=re.IGNORECASE
+        )
+
+        # Remove symbols like £ $ € ₹
+        amount_str = re.sub(r'[£$€₹¥]', '', amount_str)
+
+        # Remove commas and spaces
+        amount_str = amount_str.replace(",", "").strip()
+
+        # Keep only digits and decimal point
+        amount_str = re.sub(r"[^\d.]", "", amount_str)
+
+        if not amount_str:
+            continue
+
+        number = float(amount_str) if "." in amount_str else int(amount_str)
+
+        if key in ["pd", "property damage"]:
+            normalized["Property Damage"] = number
+            total_indemnity += number
+
+        elif key in ["bi", "business interruption"]:
+            normalized["Business Interruption"] = number
+            total_indemnity += number
+
+        elif key == "stock":
+            normalized["Stock"] = number
+            total_indemnity += number
+
+    if normalized:
+        normalized["Total Indemnity"] = int(total_indemnity) if total_indemnity == int(total_indemnity) else total_indemnity
+
+    return normalized if normalized else None
