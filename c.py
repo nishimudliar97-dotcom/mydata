@@ -2,29 +2,77 @@ def compute_total_expenses(expense_value):
     if expense_value is None:
         return None
 
-    # If value is already a list, use it directly
-    if isinstance(expense_value, list):
-        items = expense_value
-    else:
-        # Split string into lines/items
-        items = [item.strip() for item in str(expense_value).split("\n") if item.strip()]
+    value = expense_value
 
-        # Fallback: if everything is in one line separated by commas
-        if len(items) == 1 and "," in items[0]:
-            items = [item.strip() for item in items[0].split(",") if item.strip()]
+    # unwrap stringified JSON / python literal
+    for _ in range(3):
+        if isinstance(value, str):
+            raw = value.strip()
+            if not raw:
+                return None
+
+            parsed = None
+            try:
+                parsed = json.loads(raw)
+            except Exception:
+                pass
+
+            if parsed is None:
+                try:
+                    parsed = ast.literal_eval(raw)
+                except Exception:
+                    pass
+
+            if parsed is None:
+                break
+
+            value = parsed
+        else:
+            break
+
+    merged = {}
+
+    if isinstance(value, dict):
+        merged = value
+
+    elif isinstance(value, list):
+        for item in value:
+            if isinstance(item, dict):
+                for k, v in item.items():
+                    merged[k] = v
+    else:
+        return value
+
+    if not merged:
+        return None
 
     total = 0
-    cleaned_items = []
+    cleaned = {}
 
-    for item in items:
-        cleaned_items.append(item)
+    for raw_key, raw_val in merged.items():
+        if raw_val is None:
+            continue
 
-        match = re.search(r':\s*([\d,]+(?:\.\d+)?)', item)
-        if match:
-            number_str = match.group(1).replace(",", "")
-            number = float(number_str) if "." in number_str else int(number_str)
+        key = str(raw_key).strip()
+        val = raw_val
+
+        # if numeric already
+        if isinstance(val, (int, float)):
+            cleaned[key] = val
+            total += val
+            continue
+
+        # if string numeric
+        val_str = str(val).strip()
+        numeric_part = re.sub(r"[^\d.]", "", val_str)
+
+        if numeric_part:
+            number = float(numeric_part) if "." in numeric_part else int(numeric_part)
+            cleaned[key] = number
             total += number
+        else:
+            cleaned[key] = val
 
-    cleaned_items.append(f"Total Expenses: {int(total) if total == int(total) else total}")
+    cleaned["Total Expense"] = int(total) if total == int(total) else total
 
-    return cleaned_items
+    return cleaned
