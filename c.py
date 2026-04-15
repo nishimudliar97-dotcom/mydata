@@ -2,46 +2,52 @@ def compute_total_expenses(expense_value):
     if expense_value is None:
         return None
 
-    value = expense_value
+    # Case 1: already a dict
+    if isinstance(expense_value, dict):
+        merged = expense_value
 
-    # unwrap stringified JSON / python literal
-    for _ in range(3):
-        if isinstance(value, str):
-            raw = value.strip()
-            if not raw:
-                return None
-
-            parsed = None
-            try:
-                parsed = json.loads(raw)
-            except Exception:
-                pass
-
-            if parsed is None:
-                try:
-                    parsed = ast.literal_eval(raw)
-                except Exception:
-                    pass
-
-            if parsed is None:
-                break
-
-            value = parsed
-        else:
-            break
-
-    merged = {}
-
-    if isinstance(value, dict):
-        merged = value
-
-    elif isinstance(value, list):
-        for item in value:
+    # Case 2: list of dicts
+    elif isinstance(expense_value, list):
+        merged = {}
+        for item in expense_value:
             if isinstance(item, dict):
-                for k, v in item.items():
-                    merged[k] = v
+                merged.update(item)
+
+    # Case 3: string like:
+    # "{Adjuster Fees/Disbursements: 18900, Disbursements: 1120, Forensics: 6750}"
+    elif isinstance(expense_value, str):
+        raw = expense_value.strip()
+
+        if not raw:
+            return None
+
+        # remove outer curly braces if present
+        if raw.startswith("{") and raw.endswith("}"):
+            raw = raw[1:-1].strip()
+
+        merged = {}
+
+        # split by comma into key:value pairs
+        pairs = [p.strip() for p in raw.split(",") if p.strip()]
+
+        for pair in pairs:
+            if ":" not in pair:
+                continue
+
+            key, val = pair.split(":", 1)
+            key = key.strip().strip('"').strip("'")
+            val = val.strip().strip('"').strip("'")
+
+            numeric_part = re.sub(r"[^\d.]", "", val)
+
+            if numeric_part:
+                number = float(numeric_part) if "." in numeric_part else int(numeric_part)
+                merged[key] = number
+            else:
+                merged[key] = val
+
     else:
-        return value
+        return expense_value
 
     if not merged:
         return None
@@ -49,29 +55,10 @@ def compute_total_expenses(expense_value):
     total = 0
     cleaned = {}
 
-    for raw_key, raw_val in merged.items():
-        if raw_val is None:
-            continue
-
-        key = str(raw_key).strip()
-        val = raw_val
-
-        # if numeric already
+    for key, val in merged.items():
+        cleaned[key] = val
         if isinstance(val, (int, float)):
-            cleaned[key] = val
             total += val
-            continue
-
-        # if string numeric
-        val_str = str(val).strip()
-        numeric_part = re.sub(r"[^\d.]", "", val_str)
-
-        if numeric_part:
-            number = float(numeric_part) if "." in numeric_part else int(numeric_part)
-            cleaned[key] = number
-            total += number
-        else:
-            cleaned[key] = val
 
     cleaned["Total Expense"] = int(total) if total == int(total) else total
 
