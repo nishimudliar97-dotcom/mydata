@@ -1,11 +1,14 @@
 from snowflake.snowpark.functions import ai_extract, ai_parse_document, to_file
 import json
 
+# =========================================================
+# CONFIG
+# =========================================================
 STAGE_NAME = "TEST_STAGE"
 
 SUPPORTED_EXTENSIONS = {".pdf", ".doc", ".docx"}
 
-# Structured schema-style extraction request
+# Structured extraction schema
 RESPONSE_FORMAT = {
     "schema": {
         "type": "object",
@@ -14,41 +17,41 @@ RESPONSE_FORMAT = {
                 "type": "string",
                 "description": (
                     "Extract the insured name for this insurance submission. "
-                    "Look for synonyms such as insured name, account name, named insured, client name, or account overview name. "
+                    "Look for synonyms such as insured name, account name, named insured, client name, account overview name, insured. "
                     "Return only the most likely insured entity name."
                 )
             },
             "property_addresses": {
                 "type": "array",
                 "description": (
-                    "Extract all property/site/risk addresses relevant to the insured locations. "
-                    "Look for synonyms such as site, premises, property address, risk location, producing office, locations, insured address. "
-                    "If multiple site addresses are present, return all of them as separate items. "
-                    "If no direct full address is available, return the closest location description available."
+                    "Extract all property or site addresses relevant to the insured locations. "
+                    "Look for synonyms such as site, premises, property address, risk location, insured address, location, producing office. "
+                    "If multiple locations are present, return all as separate items. "
+                    "If no exact address is available, return the closest available location description."
                 )
             },
             "building_real_property_value": {
                 "type": "string",
                 "description": (
                     "Extract the building real property value. "
-                    "Look for synonyms such as building value, building real property value, real property, building amount, building TIV component. "
-                    "Return the most relevant numeric value as written in the document."
+                    "Look for synonyms such as building value, building real property value, real property value, building amount, property damage building amount, PD building component. "
+                    "Return only the most relevant numeric value as written."
                 )
             },
             "business_personal_property_value": {
                 "type": "string",
                 "description": (
                     "Extract the business personal property value. "
-                    "Look for synonyms such as contents, contents value, business personal property, BPP, stock, inventory, machinery/contents where relevant. "
-                    "Return the most relevant numeric value as written in the document."
+                    "Look for synonyms such as contents, contents value, business personal property, BPP, stock, inventory, machinery/contents. "
+                    "Return only the most relevant numeric value as written."
                 )
             },
             "business_income_value": {
                 "type": "string",
                 "description": (
-                    "Extract the rental or business income value. "
-                    "Look for synonyms such as business income, BI, rental income, gross rentals, gross revenue, business interruption amount where relevant. "
-                    "Return the most relevant numeric value as written in the document."
+                    "Extract the business income or rental/business income value. "
+                    "Look for synonyms such as business income, BI, rental income, gross rentals, gross revenue, business interruption value. "
+                    "Return only the most relevant numeric value as written."
                 )
             },
             "total_insurable_value": {
@@ -56,13 +59,17 @@ RESPONSE_FORMAT = {
                 "description": (
                     "Extract the total insurable value / total insured value / TIV. "
                     "Look for synonyms such as TIV, total insured values, total insurable value, total values. "
-                    "Return the most relevant numeric value as written in the document."
+                    "Return only the most relevant numeric value as written."
                 )
             }
         }
     }
 }
 
+
+# =========================================================
+# HELPERS
+# =========================================================
 def normalize_relative_path(stage_name: str, full_path: str) -> str:
     path = full_path.strip()
 
@@ -79,6 +86,7 @@ def normalize_relative_path(stage_name: str, full_path: str) -> str:
 
     return path
 
+
 def safe_json(value):
     if isinstance(value, str):
         try:
@@ -87,11 +95,13 @@ def safe_json(value):
             return value
     return value
 
+
 def get_extension(file_name: str) -> str:
     file_name = file_name.lower()
     if "." not in file_name:
         return ""
     return "." + file_name.split(".")[-1]
+
 
 def join_addresses(addresses):
     if not addresses:
@@ -101,6 +111,22 @@ def join_addresses(addresses):
         return ", ".join(cleaned) if cleaned else None
     return str(addresses).strip() if str(addresses).strip() else None
 
+
+def is_blank(value):
+    if value is None:
+        return True
+    if isinstance(value, str) and value.strip() == "":
+        return True
+    if isinstance(value, list) and len(value) == 0:
+        return True
+    if isinstance(value, dict) and len(value) == 0:
+        return True
+    return False
+
+
+# =========================================================
+# MAIN HANDLER FOR SNOWFLAKE PYTHON WORKSHEET
+# =========================================================
 def main(session):
     stage_rows = session.sql(f"LIST @{STAGE_NAME}").collect()
 
@@ -127,6 +153,7 @@ def main(session):
         file_ext = get_extension(file_name)
         file_uri = f"@{STAGE_NAME}/{relative_path}"
 
+        # Skip unsupported file types
         if file_ext not in SUPPORTED_EXTENSIONS:
             results.append({
                 "FILE_NAME": file_name,
@@ -143,20 +170,24 @@ def main(session):
             continue
 
         try:
-            # Optional parse first for OCR/layout understanding
+            # -------------------------------------------------
+            # Step 1: Parse document first (OCR/layout support)
+            # -------------------------------------------------
             parse_df = session.range(1).select(
                 ai_parse_document(
                     to_file(file_uri),
-                    {
-                        "mode": "LAYOUT",
-                        "page_split": True
-                    },
-                    True
+                    mode="LAYOUT",
+                    page_split=True
                 ).alias("PARSED_OUTPUT")
             )
-            _parsed_output = parse_df.collect()[0]["PARSED_OUTPUT"]
+            parsed_output = parse_df.collect()[0]["PARSED_OUTPUT"]
 
-            # Actual structured extraction
+            # Optional: keep parsed_output for debugging if needed
+            _ = parsed_output
+
+            # -------------------------------------------------
+            # Step 2: Extract required values
+            # -------------------------------------------------
             extract_df = session.range(1).select(
                 ai_extract(
                     to_file(file_uri),
@@ -164,7 +195,8 @@ def main(session):
                 ).alias("EXTRACTED_OUTPUT")
             )
 
-            extracted_output = safe_json(extract_df.collect()[0]["EXTRACTED_OUTPUT"])
+            extracted_output = extract_df.collect()[0]["EXTRACTED_OUTPUT"]
+            extracted_output = safe_json(extracted_output)
 
             if isinstance(extracted_output, dict):
                 response = extracted_output.get("response", extracted_output)
@@ -178,18 +210,14 @@ def main(session):
             business_income_value = response.get("business_income_value")
             total_insurable_value = response.get("total_insurable_value")
 
-            # Skip if nothing meaningful found
-            all_missing = all(
-                x in [None, "", [], {}]
-                for x in [
-                    insured_name,
-                    property_addresses,
-                    building_real_property_value,
-                    business_personal_property_value,
-                    business_income_value,
-                    total_insurable_value
-                ]
-            )
+            all_missing = all([
+                is_blank(insured_name),
+                is_blank(property_addresses),
+                is_blank(building_real_property_value),
+                is_blank(business_personal_property_value),
+                is_blank(business_income_value),
+                is_blank(total_insurable_value),
+            ])
 
             if all_missing:
                 results.append({
