@@ -35,7 +35,8 @@ RESPONSE_FORMAT = {
                 "type": "string",
                 "description": (
                     "Extract the building real property value. "
-                    "Look for synonyms such as building value, building real property value, real property value, building amount, property damage building amount, PD building component. "
+                    "Look for synonyms such as building value, building real property value, real property value, building amount, "
+                    "property damage building amount, PD building component. "
                     "Return only the most relevant numeric value as written."
                 )
             },
@@ -74,7 +75,7 @@ RESPONSE_FORMAT = {
 # HELPERS
 # =========================================================
 def normalize_relative_path(stage_name: str, full_path: str) -> str:
-    path = full_path.strip()
+    path = str(full_path).strip()
 
     if path.startswith("@"):
         path = path[1:]
@@ -141,6 +142,21 @@ def is_blank(value):
     return False
 
 
+def empty_result(file_name, file_ext, status, reason):
+    return {
+        "FILE_NAME": file_name,
+        "FILE_TYPE": file_ext,
+        "STATUS": status,
+        "INSURED_NAME": None,
+        "PROPERTY_ADDRESSES": None,
+        "BUILDING_REAL_PROPERTY_VALUE": None,
+        "BUSINESS_PERSONAL_PROPERTY_VALUE": None,
+        "BUSINESS_INCOME_VALUE": None,
+        "TOTAL_INSURABLE_VALUE": None,
+        "REASON": reason
+    }
+
+
 # =========================================================
 # MAIN HANDLER FOR SNOWFLAKE PYTHON WORKSHEET
 # =========================================================
@@ -148,18 +164,14 @@ def main(session):
     stage_rows = session.sql(f"LIST @{STAGE_NAME}").collect()
 
     if not stage_rows:
-        return session.create_dataframe([{
-            "FILE_NAME": None,
-            "FILE_TYPE": None,
-            "STATUS": "INFO",
-            "INSURED_NAME": None,
-            "PROPERTY_ADDRESSES": None,
-            "BUILDING_REAL_PROPERTY_VALUE": None,
-            "BUSINESS_PERSONAL_PROPERTY_VALUE": None,
-            "BUSINESS_INCOME_VALUE": None,
-            "TOTAL_INSURABLE_VALUE": None,
-            "REASON": "No files found in stage"
-        }])
+        return session.create_dataframe([
+            empty_result(
+                file_name=None,
+                file_ext=None,
+                status="INFO",
+                reason="No files found in stage"
+            )
+        ])
 
     results = []
 
@@ -171,24 +183,20 @@ def main(session):
         file_uri = f"@{STAGE_NAME}/{relative_path}"
 
         if file_ext not in SUPPORTED_EXTENSIONS:
-            results.append({
-                "FILE_NAME": file_name,
-                "FILE_TYPE": file_ext,
-                "STATUS": "SKIPPED",
-                "INSURED_NAME": None,
-                "PROPERTY_ADDRESSES": None,
-                "BUILDING_REAL_PROPERTY_VALUE": None,
-                "BUSINESS_PERSONAL_PROPERTY_VALUE": None,
-                "BUSINESS_INCOME_VALUE": None,
-                "TOTAL_INSURABLE_VALUE": None,
-                "REASON": f"Unsupported file type for this POC: {file_ext}"
-            })
+            results.append(
+                empty_result(
+                    file_name=file_name,
+                    file_ext=file_ext,
+                    status="SKIPPED",
+                    reason=f"Unsupported file type for this POC: {file_ext}"
+                )
+            )
             continue
 
         try:
             # -------------------------------------------------
             # Step 1: Parse only document-style files.
-            # For EML, skip parsing and directly use AI_EXTRACT.
+            # For .eml, skip parsing and directly use AI_EXTRACT.
             # -------------------------------------------------
             if file_ext in {".pdf", ".doc", ".docx"}:
                 parse_df = session.range(1).select(
@@ -213,10 +221,27 @@ def main(session):
             extracted_output = extract_df.collect()[0]["EXTRACTED_OUTPUT"]
             extracted_output = safe_json(extracted_output)
 
+            # -------------------------------------------------
+            # Step 3: Safely handle Snowflake response
+            # Important for .eml where response can be null
+            # -------------------------------------------------
             if isinstance(extracted_output, dict):
-                response = extracted_output.get("response", extracted_output)
+                ai_error = extracted_output.get("error")
+                response = extracted_output.get("response") or {}
             else:
+                ai_error = None
                 response = {}
+
+            if ai_error:
+                results.append(
+                    empty_result(
+                        file_name=file_name,
+                        file_ext=file_ext,
+                        status="ERROR",
+                        reason=str(ai_error)
+                    )
+                )
+                continue
 
             insured_name = response.get("insured_name")
             property_addresses = join_addresses(response.get("property_addresses"))
@@ -235,18 +260,14 @@ def main(session):
             ])
 
             if all_missing:
-                results.append({
-                    "FILE_NAME": file_name,
-                    "FILE_TYPE": file_ext,
-                    "STATUS": "SKIPPED",
-                    "INSURED_NAME": None,
-                    "PROPERTY_ADDRESSES": None,
-                    "BUILDING_REAL_PROPERTY_VALUE": None,
-                    "BUSINESS_PERSONAL_PROPERTY_VALUE": None,
-                    "BUSINESS_INCOME_VALUE": None,
-                    "TOTAL_INSURABLE_VALUE": None,
-                    "REASON": "No target values found"
-                })
+                results.append(
+                    empty_result(
+                        file_name=file_name,
+                        file_ext=file_ext,
+                        status="SKIPPED",
+                        reason="No target values found"
+                    )
+                )
                 continue
 
             results.append({
@@ -263,17 +284,13 @@ def main(session):
             })
 
         except Exception as e:
-            results.append({
-                "FILE_NAME": file_name,
-                "FILE_TYPE": file_ext,
-                "STATUS": "ERROR",
-                "INSURED_NAME": None,
-                "PROPERTY_ADDRESSES": None,
-                "BUILDING_REAL_PROPERTY_VALUE": None,
-                "BUSINESS_PERSONAL_PROPERTY_VALUE": None,
-                "BUSINESS_INCOME_VALUE": None,
-                "TOTAL_INSURABLE_VALUE": None,
-                "REASON": str(e)
-            })
+            results.append(
+                empty_result(
+                    file_name=file_name,
+                    file_ext=file_ext,
+                    status="ERROR",
+                    reason=str(e)
+                )
+            )
 
     return session.create_dataframe(results)
