@@ -52,7 +52,7 @@ def get_extension(file_name):
     return "." + file_name.split(".")[-1]
 
 
-def clean_sql_value(value):
+def clean_value(value):
     if value is None:
         return None
     return str(value)
@@ -68,7 +68,8 @@ def run(session):
 
     existing_files = set()
     for row in existing_rows:
-        existing_files.add(row["FILE_NAME"])
+        if row["FILE_NAME"]:
+            existing_files.add(row["FILE_NAME"])
 
     output_rows = []
 
@@ -124,18 +125,18 @@ def run(session):
                     "reason": str(e)
                 }
 
-        file_name_v = clean_sql_value(result.get("file_name"))
-        file_type_v = clean_sql_value(result.get("file_type"))
-        status_v = clean_sql_value(result.get("status"))
-        insured_name_v = clean_sql_value(result.get("insured_name"))
-        property_addresses_v = clean_sql_value(result.get("property_addresses"))
-        building_v = clean_sql_value(result.get("building_real_property_value"))
-        bpp_v = clean_sql_value(result.get("business_personal_property_value"))
-        bi_v = clean_sql_value(result.get("business_income_value"))
-        tiv_v = clean_sql_value(result.get("total_insurable_value"))
-        reason_v = clean_sql_value(result.get("reason"))
+        file_name_v = clean_value(result.get("file_name"))
+        file_type_v = clean_value(result.get("file_type"))
+        status_v = clean_value(result.get("status"))
+        insured_name_v = clean_value(result.get("insured_name"))
+        property_addresses_v = clean_value(result.get("property_addresses"))
+        building_v = clean_value(result.get("building_real_property_value"))
+        bpp_v = clean_value(result.get("business_personal_property_value"))
+        bi_v = clean_value(result.get("business_income_value"))
+        tiv_v = clean_value(result.get("total_insurable_value"))
+        reason_v = clean_value(result.get("reason"))
 
-        insert_df = session.create_dataframe(
+        temp_df = session.create_dataframe(
             [[
                 file_name_v,
                 file_type_v,
@@ -162,7 +163,37 @@ def run(session):
             ]
         )
 
-        insert_df.write.mode("append").save_as_table(TARGET_TABLE)
+        temp_view_name = "TEMP_EXTRACTION_RESULT"
+        temp_df.create_or_replace_temp_view(temp_view_name)
+
+        session.sql(f"""
+            INSERT INTO {TARGET_TABLE} (
+                FILE_NAME,
+                FILE_TYPE,
+                STATUS,
+                INSURED_NAME,
+                PROPERTY_ADDRESSES,
+                BUILDING_REAL_PROPERTY_VALUE,
+                BUSINESS_PERSONAL_PROPERTY_VALUE,
+                BUSINESS_INCOME_VALUE,
+                TOTAL_INSURABLE_VALUE,
+                REASON,
+                EXTRACTED_AT
+            )
+            SELECT
+                FILE_NAME,
+                FILE_TYPE,
+                STATUS,
+                INSURED_NAME,
+                PROPERTY_ADDRESSES,
+                BUILDING_REAL_PROPERTY_VALUE,
+                BUSINESS_PERSONAL_PROPERTY_VALUE,
+                BUSINESS_INCOME_VALUE,
+                TOTAL_INSURABLE_VALUE,
+                REASON,
+                CURRENT_TIMESTAMP()
+            FROM {temp_view_name}
+        """).collect()
 
         output_rows.append((
             file_name_v,
