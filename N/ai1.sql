@@ -1,41 +1,3 @@
-USE DATABASE EXPERIMENT_TEAM_DB;
-USE SCHEMA PUBLIC;
-
-CREATE OR REPLACE TABLE INSURED_SUBMISSION_EXTRACTED_VALUES_AI (
-    INSURED_NAME STRING,
-    SUBMISSION_YEAR STRING,
-
-    TIV_BASED_ON_AVG_INVENTORY NUMBER(38,2),
-    TIV_SOURCE_FILE STRING,
-    TIV_EVIDENCE STRING,
-
-    TOTAL_NET_PAID_LOSS NUMBER(38,2),
-    LOSS_YEARS NUMBER,
-    LOSS_SOURCE_FILE STRING,
-    LOSS_EVIDENCE STRING,
-
-    ALL_PROCESSED_FILES ARRAY,
-    ALL_SKIPPED_FILES ARRAY,
-
-    EXTRACTION_METHOD STRING,
-    EXTRACTION_STATUS STRING,
-    ERROR_MESSAGE STRING,
-
-    PROCESSED_AT TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
-);
-
-CREATE OR REPLACE TABLE INSURED_SUBMISSION_FILE_AI_DEBUG (
-    INSURED_NAME STRING,
-    SUBMISSION_YEAR STRING,
-    FILE_PATH STRING,
-    FILE_EXTENSION STRING,
-    AI_EXTRACT_RESULT VARIANT,
-    AI_PARSE_RESULT VARIANT,
-    EXTRACTION_STATUS STRING,
-    ERROR_MESSAGE STRING,
-    PROCESSED_AT TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
-);
-
 CREATE OR REPLACE PROCEDURE PROCESS_OPEN_MARKET_SUBMISSIONS_AI()
 RETURNS STRING
 LANGUAGE PYTHON
@@ -58,46 +20,15 @@ DEBUG_TABLE = "EXPERIMENT_TEAM_DB.PUBLIC.INSURED_SUBMISSION_FILE_AI_DEBUG"
 
 VALID_YEARS = {"2024", "2025", "2026"}
 
-# AI_EXTRACT supported extensions based on Snowflake docs.
 AI_EXTRACT_SUPPORTED_EXTENSIONS = {
-    "pdf",
-    "png",
-    "pptx",
-    "ppt",
-    "eml",
-    "doc",
-    "docx",
-    "jpeg",
-    "jpg",
-    "htm",
-    "html",
-    "text",
-    "txt",
-    "tif",
-    "tiff",
-    "bmp",
-    "gif",
-    "webp",
-    "md"
+    "pdf", "png", "pptx", "ppt", "eml", "doc", "docx",
+    "jpeg", "jpg", "htm", "html", "text", "txt",
+    "tif", "tiff", "bmp", "gif", "webp", "md"
 }
 
-# AI_PARSE_DOCUMENT supports a smaller group. We use it only for debug/parsed text.
 AI_PARSE_SUPPORTED_EXTENSIONS = {
-    "pdf",
-    "docx",
-    "pptx",
-    "png",
-    "jpeg",
-    "jpg",
-    "tif",
-    "tiff"
+    "pdf", "docx", "pptx", "png", "jpeg", "jpg", "tif", "tiff"
 }
-
-
-def normalize_text(value):
-    if value is None:
-        return ""
-    return re.sub(r"\\s+", " ", str(value).strip().lower())
 
 
 def escape_sql_string(value):
@@ -113,13 +44,6 @@ def get_extension(path):
 
 
 def clean_number(value):
-    """
-    Converts strings like:
-    '$1,580,215,088'
-    '1,580,215,088'
-    '(123,456)'
-    into Decimal.
-    """
     if value is None:
         return None
 
@@ -149,7 +73,7 @@ def clean_number(value):
     text = text.replace("%", "")
     text = text.strip()
 
-    match = re.search(r"-?\\d+(\\.\\d+)?", text)
+    match = re.search(r"-?\d+(\.\d+)?", text)
 
     if not match:
         return None
@@ -173,7 +97,7 @@ def clean_int(value):
     if text.lower() in ("none", "null", "n/a", "na", "not found", "not available", "unknown"):
         return None
 
-    match = re.search(r"\\d+", text)
+    match = re.search(r"\d+", text)
 
     if not match:
         return None
@@ -183,7 +107,7 @@ def clean_int(value):
 
 def is_probable_year_folder(folder_name):
     """
-    Accepts:
+    Accepts folders like:
     2024 - a139860
     2025 - a176544
     2026 -
@@ -193,7 +117,8 @@ def is_probable_year_folder(folder_name):
         return None
 
     text = str(folder_name).strip()
-    match = re.match(r"^(2024|2025|2026)\\b", text)
+
+    match = re.match(r"^(2024|2025|2026)\b", text)
 
     if not match:
         return None
@@ -203,15 +128,13 @@ def is_probable_year_folder(folder_name):
 
 def extract_relative_path(list_name):
     """
-    Converts LIST result path into stage-relative path.
-
-    Example input:
+    Converts:
     dropbox_stage/Open Market/1-800-Flowers/2024 - a139860/submission/file.pdf
 
-    Output:
+    Into:
     Open Market/1-800-Flowers/2024 - a139860/submission/file.pdf
     """
-    text = str(list_name).replace("\\\\", "/").replace("%20", " ")
+    text = str(list_name).replace("\\", "/").replace("%20", " ")
     lower_text = text.lower()
 
     idx = lower_text.find("open market/")
@@ -228,11 +151,11 @@ def parse_stage_path(relative_path):
 
     Open Market/<insured_name>/<year_folder>/submission/<file or subfolder/file>
 
-    This intentionally excludes:
+    Excludes:
 
     Open Market/<insured_name>/<year_folder>/modelling/original/submission/file
     """
-    path = str(relative_path).replace("\\\\", "/").replace("%20", " ")
+    path = str(relative_path).replace("\\", "/").replace("%20", " ")
 
     parts = [p.strip() for p in path.split("/") if p and p.strip()]
     lower_parts = [p.lower() for p in parts]
@@ -266,7 +189,6 @@ def parse_stage_path(relative_path):
 
     first_folder_after_year = lower_parts[year_index + 1]
 
-    # Only main submission folder directly under the year folder.
     if "submission" not in first_folder_after_year:
         return None
 
@@ -278,12 +200,6 @@ def parse_stage_path(relative_path):
 
 
 def get_response_format_json():
-    """
-    This is the prompt/schema given to Snowflake AI_EXTRACT.
-
-    All values are strings because AI_EXTRACT currently supports string as scalar type.
-    We convert numeric strings to NUMBER later.
-    """
     response_format = {
         "schema": {
             "type": "object",
@@ -301,7 +217,7 @@ def get_response_format_json():
                 "tiv_evidence": {
                     "type": "string",
                     "description": (
-                        "Return a short exact evidence snippet or nearby text showing where the TIV based on average "
+                        "Return a short evidence snippet or nearby text showing where the TIV based on average "
                         "inventory value was found. If not found, return null."
                     )
                 },
@@ -326,7 +242,7 @@ def get_response_format_json():
                 "loss_evidence": {
                     "type": "string",
                     "description": (
-                        "Return a short exact evidence snippet or nearby text showing where the total net paid loss "
+                        "Return a short evidence snippet or nearby text showing where the total net paid loss "
                         "and loss years were found. If not found, return null."
                     )
                 },
@@ -371,10 +287,6 @@ def run_ai_extract(session, relative_path):
 
 
 def run_ai_parse_document(session, relative_path, extension):
-    """
-    Used for debug/audit. AI_EXTRACT is still the main extraction engine.
-    AI_PARSE_DOCUMENT supports fewer extensions, so we only run it where possible.
-    """
     if extension not in AI_PARSE_SUPPORTED_EXTENSIONS:
         return None
 
@@ -460,26 +372,17 @@ def extract_fields_from_ai_result(ai_result):
     if response is None:
         response = {}
 
-    scoring = ai_result.get("scoring", {})
-
     return {
         "tiv_based_on_avg_inventory": response.get("tiv_based_on_avg_inventory"),
         "tiv_evidence": response.get("tiv_evidence"),
         "total_net_paid_loss": response.get("total_net_paid_loss"),
         "loss_years": response.get("loss_years"),
         "loss_evidence": response.get("loss_evidence"),
-        "document_type": response.get("document_type"),
-        "scoring": scoring
+        "document_type": response.get("document_type")
     }
 
 
 def score_candidate(value, evidence, source_file):
-    """
-    Basic candidate ranking:
-    - value exists
-    - evidence exists
-    - source filename hints
-    """
     if value is None:
         return -1
 
@@ -643,7 +546,6 @@ def insert_final_result(
 
 
 def main(session):
-    # Clear debug table for a fresh run.
     session.sql(f"TRUNCATE TABLE {DEBUG_TABLE}").collect()
 
     list_sql = f"""
@@ -654,6 +556,8 @@ def main(session):
     listed_files = session.sql(list_sql).collect()
 
     total_listed = 0
+    total_open_market_files = 0
+    total_year_files = 0
     total_submission_files = 0
     total_supported_files = 0
     total_skipped_unsupported_files = 0
@@ -665,6 +569,13 @@ def main(session):
 
         list_name = row["name"]
         relative_path = extract_relative_path(list_name)
+        lower_path = relative_path.lower()
+
+        if "open market/" in lower_path:
+            total_open_market_files += 1
+
+        if "2024" in lower_path or "2025" in lower_path or "2026" in lower_path:
+            total_year_files += 1
 
         parsed = parse_stage_path(relative_path)
 
@@ -716,8 +627,8 @@ def main(session):
                     relative_path=relative_path
                 )
 
-                # Optional parse debug. This helps validate what document parser saw.
                 ai_parse_result = None
+
                 try:
                     ai_parse_result = run_ai_parse_document(
                         session=session,
@@ -807,7 +718,7 @@ def main(session):
 
         if skipped_files:
             error_parts.append(
-                "Skipped unsupported files, including XLSX if present: "
+                "Skipped unsupported files: "
                 + ", ".join(skipped_files[:10])
             )
 
@@ -851,7 +762,9 @@ def main(session):
     return (
         f"Completed AI extraction. "
         f"Total listed files: {total_listed}. "
-        f"Matched submission files for 2024/2025/2026: {total_submission_files}. "
+        f"Open Market files: {total_open_market_files}. "
+        f"Files containing 2024/2025/2026: {total_year_files}. "
+        f"Matched top-level submission files for 2024/2025/2026: {total_submission_files}. "
         f"AI_EXTRACT supported files: {total_supported_files}. "
         f"Skipped unsupported files: {total_skipped_unsupported_files}. "
         f"Insured-year groups: {len(grouped_files)}. "
