@@ -1,0 +1,3 @@
+Completed the folder traversal logic — the code is now able to iterate through insurer-wise directories, further segmented by year and submission folders. This structure is working end-to-end and we can reliably read files across the hierarchy.
+Added support for XLSX file processing — implemented and tested extraction logic on 2–3 sample Excel documents. The approach is working and we’re able to read required fields from these files as well (earlier gap is now covered).
+On the SOV research side, worked on analyzing construction and occupancy variables. The findings have been compiled into an Excel sheet and shared with Anurag, which can be picked up for further discussion in the stand-up.
