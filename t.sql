@@ -39,29 +39,19 @@ def sql_escape(value):
         return ""
     return str(value).replace("'", "''")
 
-def extract_json(text):
-    if text is None:
-        return {}
+def maybe_json_load(value):
+    if not isinstance(value, str):
+        return value
 
-    text = str(text).strip()
+    text = value.strip()
 
-    text = re.sub(r"^```json", "", text, flags=re.IGNORECASE).strip()
-    text = re.sub(r"^```", "", text).strip()
-    text = re.sub(r"```$", "", text).strip()
+    if not (text.startswith("{") or text.startswith("[")):
+        return value
 
     try:
         return json.loads(text)
     except Exception:
-        pass
-
-    match = re.search(r"\{.*\}", text, flags=re.DOTALL)
-    if match:
-        try:
-            return json.loads(match.group(0))
-        except Exception:
-            return {}
-
-    return {}
+        return value
 
 def normalize_stage_file_path(path):
     path = str(path)
@@ -69,37 +59,7 @@ def normalize_stage_file_path(path):
         path = "@" + path
     return path
 
-def maybe_json_load(value):
-    """
-    Snowflake AI_PARSE_DOCUMENT can return JSON-formatted string.
-    Sometimes nested values are also JSON strings.
-    This helper safely parses only when it looks like JSON.
-    """
-    if not isinstance(value, str):
-        return value
-
-    stripped = value.strip()
-
-    if not (
-        stripped.startswith("{")
-        or stripped.startswith("[")
-    ):
-        return value
-
-    try:
-        return json.loads(stripped)
-    except Exception:
-        return value
-
-def collect_text_from_any_shape(value):
-    """
-    Handles different possible AI_PARSE_DOCUMENT output shapes:
-    1. {"pages": [{"content": "..."}, {"content": "..."}]}
-    2. {"pages": ["page text 1", "page text 2"]}
-    3. {"content": "..."}
-    4. "plain markdown text"
-    5. nested JSON strings
-    """
+def collect_text(value):
     value = maybe_json_load(value)
 
     if value is None:
@@ -111,50 +71,73 @@ def collect_text_from_any_shape(value):
     if isinstance(value, list):
         parts = []
         for item in value:
-            text = collect_text_from_any_shape(item)
-            if text:
-                parts.append(text)
+            item_text = collect_text(item)
+            if item_text:
+                parts.append(item_text)
         return "\n\n".join(parts)
 
     if isinstance(value, dict):
-        # error/value wrapper
-        if value.get("error"):
-            raise Exception("AI_PARSE_DOCUMENT error: " + str(value.get("error")))
+        if "error" in value and value["error"]:
+            raise Exception("AI_PARSE_DOCUMENT error: " + str(value["error"]))
 
         if "value" in value:
-            return collect_text_from_any_shape(value.get("value"))
+            return collect_text(value["value"])
 
         if "pages" in value:
-            return collect_text_from_any_shape(value.get("pages"))
+            return collect_text(value["pages"])
 
         if "content" in value:
-            return collect_text_from_any_shape(value.get("content"))
+            return collect_text(value["content"])
 
-        # fallback: join useful scalar values
         parts = []
-        for k, v in value.items():
-            if isinstance(v, (str, int, float)):
-                parts.append(str(v))
-            elif isinstance(v, (dict, list)):
-                nested_text = collect_text_from_any_shape(v)
-                if nested_text:
-                    parts.append(nested_text)
-
+        for key in value:
+            item_text = collect_text(value[key])
+            if item_text:
+                parts.append(item_text)
         return "\n\n".join(parts)
 
     return str(value)
 
-def parse_document_value(parsed_doc_raw):
-    if parsed_doc_raw is None:
-        raise Exception("AI_PARSE_DOCUMENT returned NULL")
+def extract_json_from_llm(text):
+    if text is None:
+        return {
+            "ntu_reason": "Unclear / not explicitly evidenced",
+            "ntu_confidence": "Low",
+            "ntu_explanation": "LLM returned empty output.",
+            "secondary_factors": [],
+            "do_not_use_as_primary_reason": []
+        }
 
-    parsed_obj = maybe_json_load(parsed_doc_raw)
-    doc_text = collect_text_from_any_shape(parsed_obj)
+    raw_text = str(text).strip()
 
-    if not doc_text or len(doc_text.strip()) == 0:
-        raise Exception("AI_PARSE_DOCUMENT produced empty text")
+    cleaned = raw_text
+    cleaned = re.sub(r"^```json", "", cleaned, flags=re.IGNORECASE).strip()
+    cleaned = re.sub(r"^```", "", cleaned).strip()
+    cleaned = re.sub(r"```$", "", cleaned).strip()
 
-    return doc_text
+    parsed = None
+
+    try:
+        parsed = json.loads(cleaned)
+    except Exception:
+        match = re.search(r"\{.*\}", cleaned, flags=re.DOTALL)
+        if match:
+            try:
+                parsed = json.loads(match.group(0))
+            except Exception:
+                parsed = None
+
+    if isinstance(parsed, dict):
+        return parsed
+
+    return {
+        "ntu_reason": "Unclear / not explicitly evidenced",
+        "ntu_confidence": "Low",
+        "ntu_explanation": "LLM did not return a valid JSON object.",
+        "secondary_factors": [],
+        "do_not_use_as_primary_reason": [],
+        "raw_text": raw_text
+    }
 
 def run(session, stage_path, limit_files):
     run_id = str(uuid.uuid4())
@@ -162,8 +145,7 @@ def run(session, stage_path, limit_files):
     if limit_files is None or limit_files <= 0:
         limit_files = 10
 
-    files = session.file.list(stage_path, pattern=r".*\\.pdf$")
-
+    files = session.file.list(stage_path, pattern=r".*\.pdf$")
     selected_files = files[:limit_files]
 
     processed_count = 0
@@ -191,9 +173,12 @@ def run(session, stage_path, limit_files):
             parsed_row = session.sql(parse_sql).collect()[0]
             parsed_doc_raw = parsed_row["PARSED_DOC"]
 
-            doc_text = parse_document_value(parsed_doc_raw)
+            doc_text = collect_text(parsed_doc_raw)
 
-            doc_text = doc_text[:60000]
+            if doc_text is None or len(doc_text.strip()) == 0:
+                raise Exception("AI_PARSE_DOCUMENT produced empty text")
+
+            doc_text = doc_text[:50000]
 
             prompt = f"""
 You are analyzing insurance quote discussion email chains for known NTU cases.
@@ -258,21 +243,11 @@ Email chain text:
             llm_row = session.sql(llm_sql).collect()[0]
             llm_text = llm_row["LLM_RESULT"]
 
-            result_json = extract_json(llm_text)
+            result_json = extract_json_from_llm(llm_text)
 
-            ntu_reason = result_json.get("ntu_reason", "Unclear / not explicitly evidenced")
-            ntu_confidence = result_json.get("ntu_confidence", "Low")
-            ntu_explanation = result_json.get("ntu_explanation", "")
-
-            if not result_json:
-                result_json = {
-                    "ntu_reason": ntu_reason,
-                    "ntu_confidence": ntu_confidence,
-                    "ntu_explanation": ntu_explanation,
-                    "secondary_factors": [],
-                    "do_not_use_as_primary_reason": [],
-                    "raw_text": str(llm_text)
-                }
+            ntu_reason = result_json["ntu_reason"] if "ntu_reason" in result_json else "Unclear / not explicitly evidenced"
+            ntu_confidence = result_json["ntu_confidence"] if "ntu_confidence" in result_json else "Low"
+            ntu_explanation = result_json["ntu_explanation"] if "ntu_explanation" in result_json else ""
 
             insert_sql = f"""
                 INSERT INTO NTU_REASON_POC_RESULTS
