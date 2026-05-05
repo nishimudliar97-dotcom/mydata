@@ -12,6 +12,8 @@ CREATE OR REPLACE TABLE NTU_REASON_POC_RESULTS (
     ntu_confidence STRING,
     ntu_explanation STRING,
     raw_llm_output VARIANT,
+    raw_llm_text STRING,
+    raw_parsed_text STRING,
     status STRING,
     error_message STRING
 );
@@ -31,6 +33,7 @@ $$
 import json
 import uuid
 import re
+import traceback
 
 MODEL_NAME = "llama3.1-8b"
 
@@ -39,76 +42,14 @@ def sql_escape(value):
         return ""
     return str(value).replace("'", "''")
 
-def maybe_json_load(value):
-    if not isinstance(value, str):
-        return value
-
-    text = value.strip()
-
-    if not (text.startswith("{") or text.startswith("[")):
-        return value
-
-    try:
-        return json.loads(text)
-    except Exception:
-        return value
-
 def normalize_stage_file_path(path):
     path = str(path)
     if not path.startswith("@"):
         path = "@" + path
     return path
 
-def collect_text(value):
-    value = maybe_json_load(value)
-
-    if value is None:
-        return ""
-
-    if isinstance(value, str):
-        return value
-
-    if isinstance(value, list):
-        parts = []
-        for item in value:
-            item_text = collect_text(item)
-            if item_text:
-                parts.append(item_text)
-        return "\n\n".join(parts)
-
-    if isinstance(value, dict):
-        if "error" in value and value["error"]:
-            raise Exception("AI_PARSE_DOCUMENT error: " + str(value["error"]))
-
-        if "value" in value:
-            return collect_text(value["value"])
-
-        if "pages" in value:
-            return collect_text(value["pages"])
-
-        if "content" in value:
-            return collect_text(value["content"])
-
-        parts = []
-        for key in value:
-            item_text = collect_text(value[key])
-            if item_text:
-                parts.append(item_text)
-        return "\n\n".join(parts)
-
-    return str(value)
-
 def extract_json_from_llm(text):
-    if text is None:
-        return {
-            "ntu_reason": "Unclear / not explicitly evidenced",
-            "ntu_confidence": "Low",
-            "ntu_explanation": "LLM returned empty output.",
-            "secondary_factors": [],
-            "do_not_use_as_primary_reason": []
-        }
-
-    raw_text = str(text).strip()
+    raw_text = "" if text is None else str(text).strip()
 
     cleaned = raw_text
     cleaned = re.sub(r"^```json", "", cleaned, flags=re.IGNORECASE).strip()
@@ -133,7 +74,7 @@ def extract_json_from_llm(text):
     return {
         "ntu_reason": "Unclear / not explicitly evidenced",
         "ntu_confidence": "Low",
-        "ntu_explanation": "LLM did not return a valid JSON object.",
+        "ntu_explanation": "The model did not return valid JSON. Check raw_llm_text for the actual response.",
         "secondary_factors": [],
         "do_not_use_as_primary_reason": [],
         "raw_text": raw_text
@@ -167,18 +108,19 @@ def run(session, stage_path, limit_files):
                         'mode', 'LAYOUT',
                         'page_split', TRUE
                     )
-                ) AS parsed_doc
+                )::STRING AS parsed_doc_text
             """
 
             parsed_row = session.sql(parse_sql).collect()[0]
-            parsed_doc_raw = parsed_row["PARSED_DOC"]
+            parsed_text = parsed_row["PARSED_DOC_TEXT"]
 
-            doc_text = collect_text(parsed_doc_raw)
+            if parsed_text is None or len(str(parsed_text).strip()) == 0:
+                raise Exception("AI_PARSE_DOCUMENT returned empty text")
 
-            if doc_text is None or len(doc_text.strip()) == 0:
-                raise Exception("AI_PARSE_DOCUMENT produced empty text")
+            parsed_text = str(parsed_text)
 
-            doc_text = doc_text[:50000]
+            # Keep text smaller for first POC
+            parsed_text_for_prompt = parsed_text[:50000]
 
             prompt = f"""
 You are analyzing insurance quote discussion email chains for known NTU cases.
@@ -225,8 +167,8 @@ Rules:
 7. secondary_factors must be an array of short strings.
 8. do_not_use_as_primary_reason must be an array of short strings.
 
-Email chain text:
-{doc_text}
+Parsed PDF/email-chain text:
+{parsed_text_for_prompt}
 """
 
             llm_sql = f"""
@@ -237,7 +179,7 @@ Email chain text:
                         'temperature', 0,
                         'max_tokens', 1200
                     )
-                ) AS llm_result
+                )::STRING AS llm_result
             """
 
             llm_row = session.sql(llm_sql).collect()[0]
@@ -259,7 +201,9 @@ Email chain text:
                     '{sql_escape(ntu_reason)}',
                     '{sql_escape(ntu_confidence)}',
                     '{sql_escape(ntu_explanation)}',
-                    PARSE_JSON('{sql_escape(json.dumps(result_json))}'),
+                    TRY_PARSE_JSON('{sql_escape(json.dumps(result_json))}'),
+                    '{sql_escape(llm_text)}',
+                    '{sql_escape(parsed_text[:10000])}',
                     'SUCCESS',
                     NULL
             """
@@ -269,6 +213,7 @@ Email chain text:
 
         except Exception as e:
             error_count += 1
+            full_error = traceback.format_exc()
 
             insert_error_sql = f"""
                 INSERT INTO NTU_REASON_POC_RESULTS
@@ -281,8 +226,10 @@ Email chain text:
                     NULL,
                     NULL,
                     NULL,
+                    NULL,
+                    NULL,
                     'ERROR',
-                    '{sql_escape(str(e))}'
+                    '{sql_escape(full_error)}'
             """
 
             session.sql(insert_error_sql).collect()
@@ -294,7 +241,7 @@ TRUNCATE TABLE NTU_REASON_POC_RESULTS;
 
 CALL RUN_NTU_REASON_POC(
   '@DROPBOX_OPEN_MARKET_V3/Open_Market',
-  10
+  3
 );
 
 SELECT
@@ -302,7 +249,8 @@ SELECT
     ntu_reason,
     ntu_confidence,
     ntu_explanation,
-    raw_llm_output,
+    raw_llm_text,
+    raw_parsed_text,
     status,
     error_message
 FROM NTU_REASON_POC_RESULTS
