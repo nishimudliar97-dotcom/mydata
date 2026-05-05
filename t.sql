@@ -1,17 +1,3 @@
-CREATE OR REPLACE TABLE NTU_REASON_POC_RESULTS (
-    run_id STRING,
-    processed_at TIMESTAMP_NTZ,
-    file_name STRING,
-    file_path STRING,
-    ntu_reason STRING,
-    ntu_confidence STRING,
-    ntu_explanation STRING,
-    raw_llm_output VARIANT,
-    status STRING,
-    error_message STRING
-);
-
-
 CREATE OR REPLACE PROCEDURE RUN_NTU_REASON_POC(
     STAGE_PATH STRING,
     LIMIT_FILES INTEGER
@@ -34,15 +20,10 @@ def sql_escape(value):
     return str(value).replace("'", "''")
 
 def extract_json(text):
-    """
-    LLM should return JSON only, but this makes the procedure more tolerant
-    if the model wraps output with extra text.
-    """
     if text is None:
         return {}
-    text = str(text).strip()
 
-    # Remove common markdown wrappers
+    text = str(text).strip()
     text = re.sub(r"^```json", "", text, flags=re.IGNORECASE).strip()
     text = re.sub(r"^```", "", text).strip()
     text = re.sub(r"```$", "", text).strip()
@@ -52,7 +33,6 @@ def extract_json(text):
     except Exception:
         pass
 
-    # Fallback: extract first JSON object from text
     match = re.search(r"\{.*\}", text, flags=re.DOTALL)
     if match:
         try:
@@ -62,16 +42,29 @@ def extract_json(text):
 
     return {}
 
+def normalize_stage_file_path(path):
+    """
+    session.file.list() may return either:
+    @DROPOBOX_OPEN_MARKET_V3/Open_Market/file.pdf
+
+    or:
+    dropbox_open_market_v3/Open_Market/file.pdf
+
+    This function makes both usable.
+    """
+    path = str(path)
+
+    if not path.startswith("@"):
+        path = "@" + path
+
+    return path
+
 def run(session, stage_path, limit_files):
     run_id = str(uuid.uuid4())
-    now = datetime.datetime.utcnow().isoformat()
 
     if limit_files is None or limit_files <= 0:
         limit_files = 10
 
-    # List all PDFs recursively under the stage path.
-    # Example STAGE_PATH:
-    # @DROPOBOX_OPEN_MARKET_V3/Open_Market
     files = session.file.list(stage_path, pattern=r".*\.pdf$")
 
     selected_files = files[:limit_files]
@@ -79,19 +72,11 @@ def run(session, stage_path, limit_files):
     error_count = 0
 
     for f in selected_files:
-        file_path = f.name
+        original_file_path = str(f.name)
+        file_path = normalize_stage_file_path(original_file_path)
         file_name = file_path.split("/")[-1]
 
         try:
-            # Convert full stage file path into:
-            # stage name/path and relative file path for TO_FILE('@stage/path', 'file.pdf')
-            #
-            # Example full path:
-            # @DROPOBOX_OPEN_MARKET_V3/Open_Market/Folder/email_chain.pdf
-            if not file_path.startswith("@"):
-                raise Exception(f"Unexpected stage file path: {file_path}")
-
-            # Split at final slash
             stage_dir = file_path.rsplit("/", 1)[0]
             rel_file = file_path.rsplit("/", 1)[1]
 
@@ -109,10 +94,11 @@ def run(session, stage_path, limit_files):
             if parsed_doc_raw is None:
                 raise Exception("AI_PARSE_DOCUMENT returned NULL")
 
-            # parsed_doc_raw may be string or variant-like
-            parsed_obj = json.loads(parsed_doc_raw) if isinstance(parsed_doc_raw, str) else parsed_doc_raw
+            if isinstance(parsed_doc_raw, str):
+                parsed_obj = json.loads(parsed_doc_raw)
+            else:
+                parsed_obj = parsed_doc_raw
 
-            # If return_error_details = TRUE, result can contain value/error.
             parse_error = None
             parsed_value = parsed_obj
 
@@ -123,7 +109,6 @@ def run(session, stage_path, limit_files):
             if parse_error:
                 raise Exception(f"AI_PARSE_DOCUMENT error: {parse_error}")
 
-            # Collect text from page_split output
             doc_text_parts = []
 
             if isinstance(parsed_value, dict) and "pages" in parsed_value:
@@ -137,9 +122,6 @@ def run(session, stage_path, limit_files):
                 doc_text_parts.append(str(parsed_value))
 
             doc_text = "\n\n".join(doc_text_parts)
-
-            # Keep prompt input controlled for POC.
-            # Increase later after checking token/cost behavior.
             doc_text = doc_text[:90000]
 
             prompt = f"""
@@ -187,7 +169,6 @@ Email chain text:
             llm_row = session.sql(llm_sql).collect()[0]
             llm_result = llm_row["LLM_RESULT"]
 
-            # AI_COMPLETE with return_error_details TRUE may return object with value/error.
             if isinstance(llm_result, str):
                 try:
                     llm_outer = json.loads(llm_result)
@@ -199,7 +180,11 @@ Email chain text:
             if isinstance(llm_outer, dict) and llm_outer.get("error"):
                 raise Exception(f"AI_COMPLETE error: {llm_outer.get('error')}")
 
-            llm_text = llm_outer.get("value") if isinstance(llm_outer, dict) and "value" in llm_outer else llm_result
+            if isinstance(llm_outer, dict) and "value" in llm_outer:
+                llm_text = llm_outer.get("value")
+            else:
+                llm_text = llm_result
+
             result_json = extract_json(llm_text)
 
             ntu_reason = result_json.get("ntu_reason", "Unclear / not explicitly evidenced")
@@ -220,11 +205,13 @@ Email chain text:
                     'SUCCESS',
                     NULL
             """
+
             session.sql(insert_sql).collect()
             processed_count += 1
 
         except Exception as e:
             error_count += 1
+
             insert_error_sql = f"""
                 INSERT INTO NTU_REASON_POC_RESULTS
                 SELECT
@@ -239,6 +226,7 @@ Email chain text:
                     'ERROR',
                     '{sql_escape(str(e))}'
             """
+
             session.sql(insert_error_sql).collect()
 
     return f"Run ID: {run_id}; processed={processed_count}; errors={error_count}; selected={len(selected_files)}"
