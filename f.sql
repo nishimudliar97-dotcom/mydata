@@ -3,7 +3,7 @@ USE DATABASE EXPERIMENT_TEAM_DB;
 USE SCHEMA PUBLIC;
 USE WAREHOUSE EXPERIMENT_TEAM_VWH;
 
-CREATE OR REPLACE TABLE NTU_REASON_POC_RESULTS (
+CREATE OR REPLACE TABLE NTU_CATEGORY_DISCOVERY_RESULTS (
     run_id STRING,
     processed_at TIMESTAMP_NTZ,
     insurer_name STRING,
@@ -20,7 +20,7 @@ CREATE OR REPLACE TABLE NTU_REASON_POC_RESULTS (
     error_message STRING
 );
 
-CREATE OR REPLACE PROCEDURE RUN_NTU_REASON_POC(
+CREATE OR REPLACE PROCEDURE RUN_NTU_CATEGORY_DISCOVERY_POC(
     STAGE_PATH STRING,
     LIMIT_FILES INTEGER
 )
@@ -51,30 +51,16 @@ def normalize_stage_file_path(path):
     return path
 
 def get_folder_name(file_path):
-    """
-    Immediate parent folder of the PDF file.
-    Example:
-    @STAGE/Open_Market/A184429_Taylor_Preston/Submission/email.pdf
-    -> Submission
-    """
     parts = file_path.strip("/").split("/")
     if len(parts) >= 2:
         return parts[-2]
     return None
 
 def get_insurer_name(file_path):
-    """
-    First folder after Open_Market.
-    Example:
-    @STAGE/Open_Market/A184429_Taylor_Preston/Submission/email.pdf
-    -> A184429_Taylor_Preston
-    """
     parts = file_path.strip("/").split("/")
-
     for i, part in enumerate(parts):
         if part.lower() == "open_market" and i + 1 < len(parts):
             return parts[i + 1]
-
     return get_folder_name(file_path)
 
 def extract_json_from_llm(text):
@@ -86,7 +72,6 @@ def extract_json_from_llm(text):
     cleaned = re.sub(r"```$", "", cleaned).strip()
 
     parsed = None
-
     try:
         parsed = json.loads(cleaned)
     except Exception:
@@ -171,12 +156,7 @@ Required JSON keys:
 STRICT RULES:
 1. This is already an NTU case. Do not decide whether it is NTU.
 2. You MUST infer a likely NTU reason category if the email contains any quote discussion, broker negotiation, market response, pricing discussion, capacity discussion, layer discussion, terms discussion, or placement update.
-3. Do NOT use phrases like:
-   - "Unclear / not explicitly evidenced"
-   - "Insufficient evidence"
-   - "No clear reason"
-   - "Not explicitly stated"
-   as the primary category unless the document contains almost no commercial discussion at all.
+3. Do NOT use phrases like "Unclear / not explicitly evidenced", "Insufficient evidence", "No clear reason", or "Not explicitly stated" as the primary category unless the document contains almost no commercial discussion at all.
 4. The reason does NOT need to be explicit. It can be inferred from the behaviour of the discussion.
 5. Create your own short category name based on the email evidence.
 6. The category should be reusable across similar cases.
@@ -334,8 +314,6 @@ def run(session, stage_path, limit_files):
                 raise Exception("AI_PARSE_DOCUMENT returned empty text")
 
             parsed_text = str(parsed_text)
-
-            # Keep text smaller for POC
             parsed_text_for_prompt = parsed_text[:50000]
 
             prompt = build_primary_prompt(parsed_text_for_prompt)
@@ -358,7 +336,6 @@ def run(session, stage_path, limit_files):
 
             category_value = result_json["ntu_reason_category_llm"] if "ntu_reason_category_llm" in result_json else ""
 
-            # Retry once if model gives unclear/non-useful category
             if is_bad_unclear_category(category_value):
                 retry_prompt = build_retry_prompt(parsed_text_for_prompt)
 
@@ -379,7 +356,6 @@ def run(session, stage_path, limit_files):
                 retry_json = extract_json_from_llm(retry_text)
                 retry_category = retry_json["ntu_reason_category_llm"] if "ntu_reason_category_llm" in retry_json else ""
 
-                # Use retry response even if still weak, so raw text shows final attempt
                 result_json = retry_json
                 llm_text = retry_text
                 category_value = retry_category
@@ -389,7 +365,7 @@ def run(session, stage_path, limit_files):
             ntu_explanation = result_json["ntu_explanation"] if "ntu_explanation" in result_json else "The model did not return the expected explanation field. Check raw_llm_text."
 
             insert_sql = f"""
-                INSERT INTO NTU_REASON_POC_RESULTS
+                INSERT INTO NTU_CATEGORY_DISCOVERY_RESULTS
                 SELECT
                     '{sql_escape(run_id)}',
                     CURRENT_TIMESTAMP(),
@@ -410,12 +386,12 @@ def run(session, stage_path, limit_files):
             session.sql(insert_sql).collect()
             processed_count += 1
 
-        except Exception as e:
+        except Exception:
             error_count += 1
             full_error = traceback.format_exc()
 
             insert_error_sql = f"""
-                INSERT INTO NTU_REASON_POC_RESULTS
+                INSERT INTO NTU_CATEGORY_DISCOVERY_RESULTS
                 SELECT
                     '{sql_escape(run_id)}',
                     CURRENT_TIMESTAMP(),
@@ -438,9 +414,9 @@ def run(session, stage_path, limit_files):
     return f"Run ID: {run_id}; processed={processed_count}; errors={error_count}; selected={len(selected_files)}"
 $$;
 
-TRUNCATE TABLE NTU_REASON_POC_RESULTS;
+TRUNCATE TABLE NTU_CATEGORY_DISCOVERY_RESULTS;
 
-CALL RUN_NTU_REASON_POC(
+CALL RUN_NTU_CATEGORY_DISCOVERY_POC(
   '@DROPBOX_OPEN_MARKET_V3/Open_Market',
   3
 );
@@ -456,5 +432,5 @@ SELECT
     raw_llm_text,
     status,
     error_message
-FROM NTU_REASON_POC_RESULTS
+FROM NTU_CATEGORY_DISCOVERY_RESULTS
 ORDER BY processed_at DESC;
