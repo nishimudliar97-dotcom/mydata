@@ -1,362 +1,238 @@
-Yes. For this second NTU case, the account is **Auro Hotel Management LLC**, broker is **Marsh**, and Convex is being asked to quote / follow terms on a property submission effective **30 June 2025**.
+Yes. This **third NTU case** is for **Macy’s**, and the discussion is mainly around **renewal quote terms, CAT sublimits, SRCC coverage, CAEQ additional limit, and tied lines**.
 
-Based on the email chain, this case looks different from the first one. Here, the strongest signal is not layer mismatch. The strongest NTU reason appears to be:
-
-> **Broker/market preference or pricing competitiveness — Convex was asked to support Fidelis lead terms rather than independently lead the placement, and Convex only offered a small 7.5% participation on those terms.**
-
-There is no explicit email saying “Convex lost because of price” or “client chose Fidelis,” but the chain shows that **Fidelis was already providing lead terms**, and Convex was being asked whether it could support those terms.
+This case has a stronger “terms / coverage mismatch” angle than the second case.
 
 ---
 
 # 1. Discussion flow in simple insurance terms
 
-## Step 1 — Marsh sends the property submission
+## Step 1 — Convex provides renewal quote options
 
-Marsh sends a property submission for:
+Convex gives renewal quote options for Macy’s:
 
-**Auro Hotel Management LLC**
+| Quoted option           |  Premium |     Line |
+| ----------------------- | -------: | -------: |
+| USD 100m xs USD 200m    |   USD 5m |  10% LTS |
+| USD 500m xs USD 500m    | USD 720k |   8% LTS |
+| OR USD 700m xs USD 300m | USD 2.2m | 5.7% LTS |
 
-Policy period:
+Other terms mentioned:
 
-**30 June 2025 to 30 June 2026**
+| Term                                | Value                          |
+| ----------------------------------- | ------------------------------ |
+| NCG                                 | Yes                            |
+| Open to inception                   | Yes                            |
+| Subject to no known/reported losses | Yes                            |
+| Terms and conditions                | As expiry                      |
+| SRCC                                | Excluded initially             |
+| CAT sublimit                        | All CAT sublimited to USD 300m |
 
-The submission includes:
-
-* 2025 Market Presentation
-* 2025 SOV with COPE
-* Loss Runs
-* Coverage Specifications
-
-This means Marsh gave Convex the main underwriting pack needed to review the risk.
-
----
-
-## Step 2 — The risk profile is large and catastrophe-exposed
-
-The account has a large hotel portfolio.
-
-Important exposure information seen in the screenshots:
-
-| Item                                      |                           Value |
-| ----------------------------------------- | ------------------------------: |
-| 2025 TIV                                  |               USD 1,026,101,079 |
-| Building Values                           |                 USD 826,306,780 |
-| Contents Values                           |                 USD 100,360,000 |
-| Business Interruption                     |                  USD 99,434,299 |
-| Number of hotel properties                | Around 35 owned/operated hotels |
-| Portfolio spread                          |                     Five states |
-| Number of locations shown in one overview |                              41 |
-| Florida TIV                               |                 USD 284,817,919 |
-| South Carolina TIV                        |                 USD 455,697,788 |
-| Georgia TIV                               |                 USD 152,557,054 |
-| North Carolina TIV                        |                  USD 60,964,325 |
-| Virginia TIV                              |                  USD 72,063,994 |
-
-The portfolio has meaningful exposure in **Florida** and **South Carolina**, which are catastrophe-sensitive areas, especially for windstorm / hurricane risk.
+So initially, Convex’s quote had a clear issue: **SRCC was excluded**, and CAT was sublimited to **USD 300m**.
 
 ---
 
-## Step 3 — Loss history includes one major loss
+## Step 2 — Broker questions the quote conditions
 
-The loss summary shows most years as clean, except:
+Aon / broker responds with questions:
 
-| Year    | Loss detail                   |
-| ------- | ----------------------------- |
-| 2024/25 | Clean                         |
-| 2023/24 | Clean                         |
-| 2022/23 | USD 4,043,151 — Hurricane Ian |
-| 2021/22 | Clean                         |
-| 2020/21 | Clean                         |
+| Broker question                                 | Meaning                                                                             |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------- |
+| “Line to stand”                                 | Broker wants to know if Convex’s line will stay as offered.                         |
+| “I envisage to keep all markets on the program” | Broker wants all existing/relevant insurers to remain involved.                     |
+| “SRCC — do we have scope to discuss this?”      | Broker wants SRCC included or amended.                                              |
+| “Cal quake submitted to USD 250m”               | Broker says CAEQ / Cal Quake sublimit should be USD 250m, not necessarily USD 300m. |
 
-So the risk has generally clean losses, but there is one significant catastrophe loss from **Hurricane Ian**.
-
----
-
-## Step 4 — Marsh asks Convex to model several layers
-
-Marsh asks Convex to model:
-
-| Requested layer    |
-| ------------------ |
-| Primary USD 25M    |
-| Primary USD 50M    |
-| Primary USD 100M   |
-| USD 25M xs USD 25M |
-| USD 50M xs USD 50M |
-
-This means Marsh was exploring multiple possible placements: primary options and excess options.
+This tells us the broker is not fully comfortable with Convex’s terms.
 
 ---
 
-## Step 5 — Marsh asks Convex to discuss the opportunity
+## Step 3 — Convex explains its position
 
-Iona from Marsh asks Rhys/Convex to book time to discuss the new opportunity.
+Convex responds:
 
-This suggests Convex was being considered as a potential supporting market.
+| Topic            | Convex position                                                                                                   |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------- |
+| LTS / lines tied | Lines are tied; Convex wants preferential / in-full signing on lower layers.                                      |
+| Non-CAT lines    | Convex says many markets do not put out significant non-CAT lines.                                                |
+| SRCC             | Convex says it can discuss SRCC, but it has been excluded for many years and standalone coverage is far superior. |
+| CAEQ             | Convex says it rated off USD 250m and only mentioned it to specify excess layers are non-CAT.                     |
 
----
-
-## Step 6 — Convex asks for Fidelis lead terms
-
-Ollie from Convex asks Marsh:
-
-> Can you please ping me a one-liner with FID’s lead terms please.
-
-This is important.
-
-It means Convex is not necessarily creating its own lead quote. Convex wants to know **Fidelis’s lead terms** and likely decide whether to support/follow them.
+This is very important because Convex is defending its restrictive quote structure and coverage position.
 
 ---
 
-## Step 7 — Marsh provides Fidelis lead terms
+## Step 4 — Broker says Cal Quake sublimit is changing
 
-Marsh replies:
+Aon says after a call with the risk manager:
 
-> Fidelis lead terms as follows:
-> P$100m @ $2.8m less 20% with deductibles as per our original submission email.
+> They are being directed to move the Cal Quake sublimit in line with the rest of the CAT sublimits on the program, from USD 250m to USD 300m.
 
-This means Fidelis appears to be leading or setting terms for:
+This means the client/risk manager wants the **California Earthquake sublimit increased** from USD 250m to USD 300m.
 
-**Primary USD 100M at USD 2.8M, less 20%.**
-
-This becomes the pricing benchmark.
+Broker asks Convex to do the necessary modelling.
 
 ---
 
-## Step 8 — Convex agrees to support Fidelis terms, but only with a small line
+## Step 5 — Convex asks whether this affects their layers
 
-Convex replies:
+Convex asks:
 
-> Convex can support FID’s terms;
-> 7.5% p/o p100 @ 2.8m USD - less 20%
-> To sign in full
-> 5% Florida NWS ded to apply.
+> Looks like the above doesn’t affect our layers?
 
-Meaning:
-
-| Field                     | Meaning                                                 |
-| ------------------------- | ------------------------------------------------------- |
-| Support FID’s terms       | Convex follows Fidelis terms                            |
-| 7.5% p/o p100             | Convex takes 7.5% participation on Primary USD 100M     |
-| @ USD 2.8M less 20%       | Pricing follows Fidelis lead terms                      |
-| To sign in full           | They require the placement to complete/sign as expected |
-| 5% Florida NWS deductible | Named Windstorm deductible for Florida applies          |
-
-Convex also includes quote subjectivities:
-
-* No deterioration in loss record
-* No material change in risk
-* LMA 5130, 5400 & 5393 apply unamended
-* Slip and wording to be agreed
-* Quote open until inception — no cover given
+This suggests Convex believes the CAEQ change may not affect the layers they quoted. But the broker/client was still asking for updated modelling / clarity.
 
 ---
 
-# 2. Main extractable fields for Excel
+## Step 6 — SRCC coverage is later incorporated
 
-You can paste this into Excel.
+Convex later confirms:
 
-| Category                | Variable / Field to Extract     | Value Found in Email Chain                                     | Why This Matters for NTU                           | Possible NTU Reason Signal                                | Confidence  |
-| ----------------------- | ------------------------------- | -------------------------------------------------------------- | -------------------------------------------------- | --------------------------------------------------------- | ----------- |
-| Account Info            | Insured Name                    | Auro Hotel Management LLC                                      | Identifies the account                             | Identifier only                                           | High        |
-| Broker                  | Broker Name                     | Marsh / Bowring Marsh                                          | Helps analyze broker channel and market preference | Broker/channel preference                                 | High        |
-| Market                  | Quoting Market                  | Convex                                                         | Market whose quote was NTU                         | Market-level tracking                                     | High        |
-| Competing / Lead Market | Lead Market                     | Fidelis                                                        | Fidelis provided lead terms                        | Broker/market preference; Convex was following lead terms | High        |
-| Policy Period           | Effective Date                  | 30 June 2025                                                   | Helps timing analysis                              | Renewal/inception timing                                  | High        |
-| Policy Period           | Expiry Date                     | 30 June 2026                                                   | Defines policy term                                | Identifier only                                           | High        |
-| Submission Contents     | Attached Documents              | Market presentation, SOV with COPE, loss runs, coverage specs  | Shows data completeness                            | Not NTU reason by itself                                  | High        |
-| Exposure                | Total TIV                       | USD 1,026,101,079                                              | Large exposure size                                | High-capacity requirement                                 | High        |
-| Exposure                | Building Values                 | USD 826,306,780                                                | Main property value component                      | Exposure severity                                         | High        |
-| Exposure                | Contents Values                 | USD 100,360,000                                                | Property exposure component                        | Exposure severity                                         | High        |
-| Exposure                | Business Interruption           | USD 99,434,299                                                 | BI exposure component                              | Loss severity potential                                   | High        |
-| Portfolio               | Number of Properties            | Approx. 35 hotels / 41 locations shown                         | Large portfolio                                    | Capacity and accumulation concern                         | Medium-High |
-| Geography               | Florida Exposure                | USD 284,817,919 / 27.76% of TIV                                | Cat-exposed state                                  | Windstorm / hurricane exposure                            | High        |
-| Geography               | South Carolina Exposure         | USD 455,697,788 / 44.41% of TIV                                | Coastal/cat exposure concern                       | Windstorm / hurricane exposure                            | High        |
-| Geography               | Other States                    | Georgia, North Carolina, Virginia                              | Geographic spread                                  | Portfolio risk profile                                    | High        |
-| Loss History            | Major Loss                      | USD 4,043,151 Hurricane Ian in 2022/23                         | Indicates prior cat loss                           | Loss experience / cat exposure signal                     | High        |
-| Loss History            | Clean Years                     | 2024/25, 2023/24, 2021/22, 2020/21 clean                       | Positive underwriting signal                       | Reduces severity of loss reason                           | High        |
-| Requested Structure     | Layers Requested                | Primary 25M, Primary 50M, Primary 100M, 25M xs 25M, 50M xs 50M | Shows multiple options considered                  | Placement structure exploration                           | High        |
-| Lead Terms              | Fidelis Terms                   | Primary 100M @ USD 2.8M less 20%                               | Lead market price benchmark                        | Convex had to match/follow lead terms                     | High        |
-| Convex Quote            | Convex Participation            | 7.5% p/o Primary 100M                                          | Convex offered limited line                        | Capacity / line size issue                                | High        |
-| Convex Quote            | Convex Pricing                  | USD 2.8M less 20%, following Fidelis                           | Convex supports lead price, not differentiated     | Broker may prefer lead/other markets                      | High        |
-| Deductible              | Florida NWS Deductible          | 5% NWS, minimum USD 100k                                       | Cat deductible condition                           | Term condition, but not clear NTU reason                  | Medium      |
-| Deductible              | Other NWS Deductible            | 3% of TIV / USD 100k minimum                                   | Cat deductible                                     | Term condition                                            | Medium      |
-| Deductible              | AOP Deductible                  | USD 150k per occurrence                                        | Standard deductible                                | Not likely NTU reason                                     | Medium      |
-| Deductible              | Flood Deductible                | USD 100k per occurrence; SFHA 2% of TIV / USD 100k min         | Flood exposure term                                | Coverage/terms signal                                     | Medium      |
-| Deductible              | Earth Movement Deductible       | USD 100k per occurrence; New Madrid 2% of TIV / USD 100k min   | EQ exposure term                                   | Coverage/terms signal                                     | Medium      |
-| Quote Conditions        | No Deterioration in Loss Record | Quoted subject to no deterioration                             | Standard underwriting condition                    | Not enough as NTU reason                                  | Medium      |
-| Quote Conditions        | No Material Change in Risk      | Quoted subject to no material change                           | Standard underwriting condition                    | Not enough as NTU reason                                  | Medium      |
-| Quote Conditions        | LMA Clauses                     | LMA 5130, 5400, 5393 apply unamended                           | Terms condition                                    | Not enough as NTU reason                                  | Medium      |
-| Quote Conditions        | Slip / Wording                  | To be agreed                                                   | Standard subjectivity                              | Not enough as NTU reason                                  | Medium      |
-| Quote Validity          | Quote Open Until                | Inception; no cover given                                      | Quote validity condition                           | Timing/coverage not bound                                 | Medium      |
-| Final Outcome           | Bound Confirmation              | Not visible in screenshots                                     | No positive bind evidence                          | Supports NTU case, not reason                             | Medium      |
+> We can incorporate the SRCC coverage into the policy given our attachment points.
+
+This means Convex agrees to include SRCC coverage, but likely because their attachment points are high enough that the risk is acceptable.
+
+Convex also says:
+
+> Additional CAEQ limit would be around USD 1.4m as an AP.
+
+AP means **Additional Premium**.
+
+So Convex is saying: if the client wants the additional California Earthquake limit, it would cost around **USD 1.4m extra**.
 
 ---
 
-# 3. NTU reason signals from this case
+## Step 7 — Convex offers revised quote to ensure it stays on the program
 
-## A. Broker / lead market preference — strongest signal
+Convex later says:
 
-This is the most important signal.
+> Given the long-term relationship with this account, we are happy to offer the below to ensure we stay on the programme.
 
-Convex asks for **Fidelis lead terms**, and Marsh provides them. Convex then says it can support those terms.
+Revised/extra quote:
 
-This suggests the placement was being driven by **Fidelis**, not Convex.
+| Quoted option           |          Premium |   Line |
+| ----------------------- | ---------------: | -----: |
+| USD 250m xs USD 50m SIR | USD 18m less 10% | 4% LTS |
 
-So if this became NTU for Convex, a likely reason is:
+And it says:
 
-> The broker/client proceeded with another lead market or preferred the Fidelis-led placement, with Convex only being considered as a following/supporting market.
+| Condition         | Value                                        |
+| ----------------- | -------------------------------------------- |
+| In addition to    | USD 500m xs USD 500m layer previously quoted |
+| Lines tied        | Yes                                          |
+| NCG               | Yes                                          |
+| Open to inception | Yes                                          |
+| All other terms   | As previous quote                            |
 
-Recommended factor:
-
-| Factor                 | Extracted Evidence                                                  | NTU Impact                                                                                      | Reason Category            | Confidence  |
-| ---------------------- | ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | -------------------------- | ----------- |
-| Lead market preference | Marsh provided Fidelis lead terms, and Convex supported FID’s terms | Convex was not leading the deal and may not have been selected or needed in the final placement | Broker / market preference | Medium-High |
-
----
-
-## B. Limited Convex line size / capacity
-
-Convex only offered:
-
-**7.5% participation on Primary USD 100M**
-
-For a USD 100M primary program, 7.5% means Convex is only offering a small slice.
-
-This can lead to NTU if the broker placed enough capacity elsewhere or preferred markets with larger/more strategic participation.
-
-Recommended factor:
-
-| Factor            | Extracted Evidence                   | NTU Impact                                                                    | Reason Category          | Confidence |
-| ----------------- | ------------------------------------ | ----------------------------------------------------------------------------- | ------------------------ | ---------- |
-| Limited line size | Convex offered 7.5% p/o Primary 100M | Broker may have preferred larger capacity or did not need Convex’s small line | Capacity / size mismatch | Medium     |
+This looks like a retention attempt. Convex is trying to stay on the account by offering an additional / adjusted layer, but still with tied lines and conditions.
 
 ---
 
-## C. Price benchmark already set by Fidelis
+# 2. Strong NTU signals in this case
 
-Fidelis terms were:
+## Primary signal: Terms / coverage mismatch
 
-**Primary USD 100M @ USD 2.8M less 20%**
+The strongest signal is around **coverage and terms**, especially:
 
-Convex did not appear to offer a better independent quote. It simply supported FID’s terms.
+* SRCC initially excluded
+* CAEQ / Cal Quake limit needed discussion
+* CAT sublimit mismatch: USD 250m vs USD 300m
+* Additional CAEQ limit required around USD 1.4m AP
+* Lines tied
+* Need for preferential / in-full signing
 
-This could mean the broker/client had pricing expectations already set by Fidelis. Convex’s offer may not have added enough commercial advantage.
-
-Recommended factor:
-
-| Factor                        | Extracted Evidence                                             | NTU Impact                                                       | Reason Category         | Confidence |
-| ----------------------------- | -------------------------------------------------------------- | ---------------------------------------------------------------- | ----------------------- | ---------- |
-| Pricing benchmark set by lead | Fidelis P100M @ USD 2.8M less 20%; Convex supported same terms | Convex was price-following rather than improving placement terms | Price / competitiveness | Medium     |
-
----
-
-## D. Catastrophe exposure / Florida NWS
-
-The portfolio has significant Florida and South Carolina exposure, and the quote specifically references:
-
-**5% Florida NWS deductible**
-
-This tells us windstorm exposure was important.
-
-However, this is probably **not the main NTU reason**, because Convex did quote and accept the 5% Florida NWS deductible basis.
-
-Recommended factor:
-
-| Factor                | Extracted Evidence                                                               | NTU Impact                                          | Reason Category                      | Confidence |
-| --------------------- | -------------------------------------------------------------------------------- | --------------------------------------------------- | ------------------------------------ | ---------- |
-| Cat-exposed portfolio | Florida TIV USD 284.8M, South Carolina TIV USD 455.7M, Florida NWS deductible 5% | Cat exposure may limit market appetite or line size | Risk appetite / catastrophe exposure | Medium     |
+This is much more of a **terms and conditions / coverage fit** case than a pure price case.
 
 ---
 
-## E. Prior Hurricane Ian loss
-
-The loss summary shows:
-
-**USD 4,043,151 Hurricane Ian loss in 2022/23**
-
-This is relevant, but not necessarily a negative reason by itself because the other years are clean.
-
-Recommended factor:
-
-| Factor         | Extracted Evidence                       | NTU Impact                                                                  | Reason Category                 | Confidence |
-| -------------- | ---------------------------------------- | --------------------------------------------------------------------------- | ------------------------------- | ---------- |
-| Prior cat loss | USD 4.043M Hurricane Ian loss in 2022/23 | May influence pricing/appetite, especially for hotel portfolio in cat zones | Loss history / catastrophe loss | Low-Medium |
-
----
-
-## F. Quote subjectivities / conditions
-
-Convex’s quote is subject to:
-
-* No deterioration in loss record
-* No material change in risk
-* LMA clauses apply unamended
-* Slip and wording to be agreed
-* Quote open until inception, no cover given
-
-These should be extracted, but I would not make them primary NTU reasons unless later emails show disagreement.
-
-Recommended factor:
-
-| Factor         | Extracted Evidence                                         | NTU Impact                                                                             | Reason Category    | Confidence |
-| -------------- | ---------------------------------------------------------- | -------------------------------------------------------------------------------------- | ------------------ | ---------- |
-| Subjectivities | No deterioration, no material change, wording to be agreed | Could block bind if conditions are not satisfied, but no evidence of disagreement here | Terms & conditions | Low        |
-
----
-
-# 4. Likely NTU reason for this case
+# 3. Likely NTU reason
 
 ## Recommended primary NTU reason
 
-**Broker / lead market preference, with Convex only supporting Fidelis lead terms as a small following line.**
+**Terms / coverage mismatch — SRCC and CAEQ / CAT sublimit requirements required negotiation, and additional CAEQ limit attracted significant additional premium.**
 
-Suggested reason text:
+Suggested wording:
 
-> The likely NTU reason is broker/lead market preference. Marsh provided Fidelis lead terms for the Primary USD 100M layer at USD 2.8M less 20%, and Convex only offered to support those Fidelis terms with a 7.5% participation. This suggests the placement was led or driven by Fidelis, and Convex may not have been required or selected in the final placement.
+> The likely NTU reason appears to be terms and coverage mismatch. The broker challenged Convex’s treatment of SRCC and Cal Quake / CAEQ limits, with the client later directing the Cal Quake sublimit to move from USD 250m to USD 300m. Convex later agreed to incorporate SRCC but indicated the additional CAEQ limit would cost around USD 1.4m AP. This suggests Convex’s quote may not have fully matched the client’s required CAT coverage structure or pricing expectation.
 
 Confidence: **Medium-High**
 
 ---
 
-# 5. Secondary NTU reasons
+# 4. Secondary NTU factors
 
-| Secondary Reason             | Why it may matter                                                                      | Confidence |
-| ---------------------------- | -------------------------------------------------------------------------------------- | ---------- |
-| Limited line size / capacity | Convex only offered 7.5% participation on Primary USD 100M                             | Medium     |
-| Price / competitiveness      | Convex followed Fidelis terms rather than offering a more attractive independent price | Medium     |
-| Catastrophe exposure         | Large Florida/South Carolina exposure and Florida NWS deductible basis                 | Medium     |
-| Prior cat loss               | Hurricane Ian loss of USD 4.043M in 2022/23                                            | Low-Medium |
-| Terms and conditions         | Quote subject to no loss deterioration, no material change, wording agreement          | Low        |
+| Secondary factor                     | Why it matters                                                                                                        | Confidence  |
+| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------- | ----------- |
+| Tied lines / signing condition       | Convex insisted lines are tied and wanted preferential / in-full signing on lower layers                              | Medium-High |
+| Price pressure                       | Additional CAEQ limit around USD 1.4m AP; revised layer premium USD 18m less 10%                                      | Medium      |
+| Broker needed all markets on program | Broker said they envisaged keeping all markets on the program, but Convex had specific signing/tied-line requirements | Medium      |
+| Coverage wording negotiation         | SRCC definition and coverage wording were being discussed                                                             | Medium      |
+| CAT sublimit alignment               | Client wanted Cal Quake sublimit aligned with other CAT sublimits from USD 250m to USD 300m                           | High        |
+| Retention risk                       | Convex says quote offered to “ensure we stay on the programme”                                                        | Medium-High |
+
+---
+
+# 5. Excel-ready extraction table
+
+You can paste this directly into Excel.
+
+| Category         | Variable / Field to Extract | Value Found in Email Chain                                                   | Why This Matters for NTU                           | Possible NTU Reason Signal          | Confidence  |
+| ---------------- | --------------------------- | ---------------------------------------------------------------------------- | -------------------------------------------------- | ----------------------------------- | ----------- |
+| Account Info     | Insured Name                | Macy’s                                                                       | Identifies the account                             | Identifier only                     | High        |
+| Broker           | Broker Name                 | Aon                                                                          | Broker/channel analysis                            | Identifier only                     | High        |
+| Market           | Quoting Market              | Convex                                                                       | Market whose quote became NTU                      | Market-level tracking               | High        |
+| Quote            | Initial Quote 1             | USD 100m xs USD 200m @ USD 5m                                                | Shows quoted layer and price                       | Price / layer structure             | High        |
+| Quote            | Initial Quote 1 Line        | 10% LTS                                                                      | Shows Convex participation                         | Capacity / line size                | High        |
+| Quote            | Initial Quote 2             | USD 500m xs USD 500m @ USD 720k                                              | Shows excess quote                                 | Price / layer structure             | High        |
+| Quote            | Initial Quote 2 Line        | 8% LTS                                                                       | Shows Convex participation                         | Capacity / line size                | High        |
+| Quote            | Alternative Quote           | USD 700m xs USD 300m @ USD 2.2m                                              | Alternative structure                              | Layer / price option                | High        |
+| Quote            | Alternative Quote Line      | 5.7% LTS                                                                     | Shows Convex participation                         | Capacity / line size                | High        |
+| Terms            | NCG                         | Yes                                                                          | Quote condition                                    | Standard quote term                 | Medium      |
+| Terms            | Open to Inception           | Yes                                                                          | Quote validity                                     | Timing / no bind yet                | Medium      |
+| Terms            | No Known / Reported Losses  | Subject to no known or reported losses                                       | Quote subjectivity                                 | Terms condition                     | Medium      |
+| Terms            | Expiring Terms              | Terms and conditions as expiry                                               | Shows base terms                                   | Not NTU reason alone                | Medium      |
+| Coverage         | SRCC Initial Position       | Ex. SRCC / SRCC initially excluded                                           | Broker challenged this                             | Coverage mismatch                   | High        |
+| Coverage         | SRCC Broker Challenge       | Broker asked “SRCC — do we have scope to discuss this?”                      | Broker did not fully accept exclusion              | Coverage negotiation                | High        |
+| Coverage         | SRCC Revised Position       | Convex can incorporate SRCC given attachment points                          | Shows concession / revised terms                   | Coverage issue partly resolved      | Medium-High |
+| CAT Sublimit     | CAT Sublimit                | All CAT sublimited to USD 300m                                               | Main CAT structure                                 | CAT limit requirement               | High        |
+| CAEQ             | Cal Quake Submitted Limit   | USD 250m initially                                                           | Original CAEQ basis                                | Sublimit mismatch                   | High        |
+| CAEQ             | Requested Revised Limit     | Move Cal Quake from USD 250m to USD 300m                                     | Client/risk manager requested increased CAEQ limit | Terms / coverage mismatch           | High        |
+| CAEQ             | Additional CAEQ Premium     | Around USD 1.4m AP                                                           | Extra cost for additional CAEQ limit               | Price / coverage cost issue         | High        |
+| Broker Intent    | Keep Markets on Program     | Broker envisaged keeping all markets on the program                          | Broker wanted continuity                           | Convex needed to remain competitive | Medium      |
+| Signing          | Lines Tied                  | Convex says lines are tied                                                   | Broker may not want tied participation             | Restrictive quote condition         | High        |
+| Signing          | Preferential / Full Signing | Convex insisted on preferential / in-full signing on lower layers            | Reduces broker flexibility                         | Signing / allocation issue          | High        |
+| Market Appetite  | Non-CAT Line Comment        | Convex says many markets do not put out significant non-CAT lines            | Indicates capacity appetite issue                  | Risk appetite / line issue          | Medium      |
+| Retention Signal | Long-term Relationship      | Convex says quote offered due to long-term relationship to stay on programme | Suggests risk of losing account                    | Retention / competitiveness issue   | Medium-High |
+| Revised Quote    | Revised Layer               | USD 250m xs USD 50m SIR                                                      | Revised offer to stay on program                   | Changed structure                   | High        |
+| Revised Quote    | Revised Premium             | USD 18m less 10%                                                             | Price of revised quote                             | Price competitiveness               | High        |
+| Revised Quote    | Revised Line                | 4% LTS                                                                       | Small line participation                           | Capacity / line size                | Medium      |
+| Final Outcome    | Bound Confirmation          | Not visible                                                                  | Known NTU case but no bind evidence                | Outcome signal                      | Medium      |
 
 ---
 
 # 6. Compact Excel-ready table
 
-You can use this version directly in your sheet.
+If you want a shorter table for your “Nishi’s Analysis” sheet:
 
-| Factor                        | Extracted Evidence                                                      | NTU Impact                                                                        | Reason Category                      | Confidence  |
-| ----------------------------- | ----------------------------------------------------------------------- | --------------------------------------------------------------------------------- | ------------------------------------ | ----------- |
-| Lead market preference        | Fidelis lead terms were provided by Marsh: P100M @ USD 2.8M less 20%    | Placement appears driven by Fidelis rather than Convex                            | Broker / lead market preference      | Medium-High |
-| Convex following, not leading | Convex said it can support FID’s terms                                  | Convex may have been only a following market and not essential to final placement | Broker / lead market preference      | Medium-High |
-| Limited Convex line           | Convex offered 7.5% p/o Primary USD 100M                                | Broker may have filled capacity elsewhere or preferred larger lines               | Capacity / line size                 | Medium      |
-| Pricing benchmark             | Convex matched Fidelis terms rather than improving them                 | Convex may not have been commercially differentiated                              | Price competitiveness                | Medium      |
-| Large TIV                     | 2025 TIV USD 1.026B                                                     | Large program requires significant capacity                                       | Capacity requirement                 | Medium      |
-| Cat exposure                  | Florida TIV USD 284.8M and South Carolina TIV USD 455.7M                | High wind-exposed portfolio may limit appetite                                    | Risk appetite / catastrophe exposure | Medium      |
-| Florida NWS deductible        | 5% NWS deductible, USD 100k minimum                                     | Key cat term; may affect acceptability                                            | Terms / deductible                   | Low-Medium  |
-| Loss history                  | USD 4.043M Hurricane Ian loss in 2022/23                                | Prior cat loss may affect appetite/pricing                                        | Loss history                         | Low-Medium  |
-| Clean loss years              | Other years shown as clean                                              | Reduces likelihood that loss record alone caused NTU                              | Positive underwriting signal         | High        |
-| Quote conditions              | No deterioration, no material change, LMA clauses, wording to be agreed | Standard subjectivities; no clear dispute shown                                   | Terms & conditions                   | Low         |
-| Quote validity                | Quote open until inception; no cover given                              | Quote was not automatically bound                                                 | Outcome / timing signal              | Medium      |
-| Bound confirmation            | No bind confirmation visible                                            | Supports known NTU status but not reason                                          | Outcome signal                       | Medium      |
+| Factor                    | Extracted Evidence                                                           | NTU Impact                                                        | Reason Category              | Confidence  |
+| ------------------------- | ---------------------------------------------------------------------------- | ----------------------------------------------------------------- | ---------------------------- | ----------- |
+| SRCC coverage issue       | Initial quote excluded SRCC; broker asked if there was scope to discuss      | Broker/client needed broader coverage than initially quoted       | Terms / coverage mismatch    | High        |
+| CAEQ limit change         | Client wanted Cal Quake sublimit moved from USD 250m to USD 300m             | Convex’s quote needed remodelling / adjustment                    | CAT sublimit mismatch        | High        |
+| Additional CAEQ premium   | Additional CAEQ limit around USD 1.4m AP                                     | Extra premium may have made quote less attractive                 | Price / coverage cost        | High        |
+| Tied lines                | Convex said lines are tied                                                   | Broker may not have had flexibility to select only desired layers | Restrictive quote condition  | High        |
+| Preferential signing      | Convex insisted on preferential / in-full signing on lower layers            | Could conflict with broker’s allocation strategy                  | Signing / allocation issue   | Medium-High |
+| Revised retention quote   | Convex offered USD 250m xs USD 50m SIR @ USD 18m less 10% to stay on program | Shows Convex was trying to remain relevant / competitive          | Retention / pricing pressure | Medium-High |
+| Multiple quote structures | 100m xs 200m, 500m xs 500m, 700m xs 300m, 250m xs 50m SIR                    | Indicates active restructuring and negotiation                    | Structure complexity         | Medium      |
+| Broker wants all markets  | Broker said they envisaged keeping all markets on the program                | Convex needed to align terms to remain selected                   | Broker placement strategy    | Medium      |
+| SRCC later accepted       | Convex later agreed to incorporate SRCC                                      | Coverage issue partly resolved, but only after negotiation        | Terms negotiation            | Medium      |
+| No bind confirmation      | No visible confirmation that Convex was bound                                | Supports known NTU outcome                                        | Outcome signal               | Medium      |
 
 ---
 
 # 7. Final quoted NTU reason for this case
 
-You can put this in your **Nishi’s Analysis** cell:
+You can use this in the Excel analysis cell:
 
-> The likely NTU reason appears to be broker/lead market preference. Marsh provided Fidelis lead terms for the Primary USD 100M layer at USD 2.8M less 20%, and Convex only supported those terms with a 7.5% participation. This suggests the placement was driven by Fidelis, with Convex acting as a following market rather than the lead. Convex’s limited line size may also have reduced its relevance if the broker filled the capacity elsewhere. Secondary factors include catastrophe exposure from the Florida/South Carolina hotel portfolio and the prior Hurricane Ian loss, but these are not clearly shown as the direct reason because Convex was still willing to quote.
+> The likely NTU reason appears to be terms and coverage mismatch. Convex’s original quote excluded SRCC and included CAT sublimit terms that required further discussion. The broker later advised that the client/risk manager wanted the Cal Quake sublimit moved from USD 250m to USD 300m, and Convex indicated that the additional CAEQ limit would require around USD 1.4m additional premium. Convex also tied its lines and wanted preferential / in-full signing on lower layers, reducing broker flexibility. These factors suggest the quote may not have matched the client’s required CAT coverage structure, pricing expectation, or placement flexibility.
 
 ---
 
@@ -364,25 +240,25 @@ You can put this in your **Nishi’s Analysis** cell:
 
 ```json
 {
-  "ntu_reason": "Broker / lead market preference",
+  "ntu_reason": "Terms / coverage mismatch",
   "ntu_reason_confidence": "Medium-High",
-  "ntu_reason_explanation": "Marsh provided Fidelis lead terms for the Primary USD 100M layer at USD 2.8M less 20%, and Convex only offered to support those terms with a 7.5% participation. This indicates the placement was likely driven by Fidelis, and Convex may not have been required or selected in the final placement.",
+  "ntu_reason_explanation": "The email chain shows that Convex's original quote excluded SRCC and included CAT/CAEQ sublimit terms that required further negotiation. The broker indicated the client wanted the Cal Quake sublimit moved from USD 250m to USD 300m, and Convex stated that the additional CAEQ limit would cost around USD 1.4m AP. Convex also required tied lines and preferential/in-full signing on lower layers. These factors suggest the quote may not have aligned with the client's required CAT coverage structure, pricing expectation, or placement flexibility.",
   "secondary_factors": [
-    "Limited Convex line size: 7.5% participation on Primary USD 100M",
-    "Pricing benchmark already set by Fidelis",
-    "Large USD 1.026B TIV hotel portfolio requiring significant capacity",
-    "Catastrophe exposure in Florida and South Carolina",
-    "Prior Hurricane Ian loss of USD 4.043M",
-    "Quote subject to no deterioration, no material change, and wording agreement"
+    "Tied lines reducing broker flexibility",
+    "Preferential / in-full signing requirement on lower layers",
+    "Additional CAEQ premium of around USD 1.4m",
+    "SRCC initially excluded and later negotiated",
+    "Multiple quote structures indicating active restructuring",
+    "Convex offering revised terms to stay on the programme"
   ],
   "do_not_use_as_primary_reason": [
-    "Deductibles alone",
-    "Loss history alone",
-    "Terms and conditions alone"
+    "Capacity alone",
+    "Timing alone",
+    "Broker preference alone"
   ]
 }
 ```
 
-So for this second case, I would quote the NTU reason as:
+For this third case, I would quote the reason as:
 
-> **Broker / lead market preference — Fidelis appears to have led the Primary USD 100M placement, and Convex only offered a small 7.5% following line on Fidelis terms.**
+> **Terms / coverage mismatch — SRCC and CAEQ/CAT sublimit requirements required negotiation, with additional CAEQ premium and tied-line conditions reducing the attractiveness/flexibility of Convex’s quote.**
