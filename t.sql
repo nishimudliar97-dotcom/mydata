@@ -32,22 +32,19 @@ import json
 import uuid
 import re
 
+MODEL_NAME = "llama3.1-8b"
+
 def sql_escape(value):
     if value is None:
         return ""
     return str(value).replace("'", "''")
 
 def extract_json(text):
-    """
-    Try to parse clean JSON from the LLM output.
-    If the model returns markdown fences or extra text, extract the first JSON object.
-    """
     if text is None:
         return {}
 
     text = str(text).strip()
 
-    # Remove markdown fences if present
     text = re.sub(r"^```json", "", text, flags=re.IGNORECASE).strip()
     text = re.sub(r"^```", "", text).strip()
     text = re.sub(r"```$", "", text).strip()
@@ -57,7 +54,6 @@ def extract_json(text):
     except Exception:
         pass
 
-    # Fallback: find first JSON object
     match = re.search(r"\{.*\}", text, flags=re.DOTALL)
     if match:
         try:
@@ -68,58 +64,97 @@ def extract_json(text):
     return {}
 
 def normalize_stage_file_path(path):
-    """
-    session.file.list() can return:
-    @STAGE/path/file.pdf
-    or:
-    stage/path/file.pdf
-
-    Normalize to @STAGE/path/file.pdf.
-    """
     path = str(path)
-
     if not path.startswith("@"):
         path = "@" + path
-
     return path
 
+def maybe_json_load(value):
+    """
+    Snowflake AI_PARSE_DOCUMENT can return JSON-formatted string.
+    Sometimes nested values are also JSON strings.
+    This helper safely parses only when it looks like JSON.
+    """
+    if not isinstance(value, str):
+        return value
+
+    stripped = value.strip()
+
+    if not (
+        stripped.startswith("{")
+        or stripped.startswith("[")
+    ):
+        return value
+
+    try:
+        return json.loads(stripped)
+    except Exception:
+        return value
+
+def collect_text_from_any_shape(value):
+    """
+    Handles different possible AI_PARSE_DOCUMENT output shapes:
+    1. {"pages": [{"content": "..."}, {"content": "..."}]}
+    2. {"pages": ["page text 1", "page text 2"]}
+    3. {"content": "..."}
+    4. "plain markdown text"
+    5. nested JSON strings
+    """
+    value = maybe_json_load(value)
+
+    if value is None:
+        return ""
+
+    if isinstance(value, str):
+        return value
+
+    if isinstance(value, list):
+        parts = []
+        for item in value:
+            text = collect_text_from_any_shape(item)
+            if text:
+                parts.append(text)
+        return "\n\n".join(parts)
+
+    if isinstance(value, dict):
+        # error/value wrapper
+        if value.get("error"):
+            raise Exception("AI_PARSE_DOCUMENT error: " + str(value.get("error")))
+
+        if "value" in value:
+            return collect_text_from_any_shape(value.get("value"))
+
+        if "pages" in value:
+            return collect_text_from_any_shape(value.get("pages"))
+
+        if "content" in value:
+            return collect_text_from_any_shape(value.get("content"))
+
+        # fallback: join useful scalar values
+        parts = []
+        for k, v in value.items():
+            if isinstance(v, (str, int, float)):
+                parts.append(str(v))
+            elif isinstance(v, (dict, list)):
+                nested_text = collect_text_from_any_shape(v)
+                if nested_text:
+                    parts.append(nested_text)
+
+        return "\n\n".join(parts)
+
+    return str(value)
+
 def parse_document_value(parsed_doc_raw):
-    """
-    AI_PARSE_DOCUMENT may return JSON string/object.
-    Extract page content if page_split = TRUE.
-    """
     if parsed_doc_raw is None:
         raise Exception("AI_PARSE_DOCUMENT returned NULL")
 
-    if isinstance(parsed_doc_raw, str):
-        parsed_obj = json.loads(parsed_doc_raw)
-    else:
-        parsed_obj = parsed_doc_raw
+    parsed_obj = maybe_json_load(parsed_doc_raw)
+    doc_text = collect_text_from_any_shape(parsed_obj)
 
-    parsed_value = parsed_obj
+    if not doc_text or len(doc_text.strip()) == 0:
+        raise Exception("AI_PARSE_DOCUMENT produced empty text")
 
-    # If parse function returns error/value wrapper
-    if isinstance(parsed_obj, dict):
-        if parsed_obj.get("error"):
-            raise Exception("AI_PARSE_DOCUMENT error: " + str(parsed_obj.get("error")))
-        if "value" in parsed_obj:
-            parsed_value = parsed_obj.get("value")
-
-    doc_text_parts = []
-
-    if isinstance(parsed_value, dict) and "pages" in parsed_value:
-        for page in parsed_value.get("pages", []):
-            content = page.get("content", "")
-            if content:
-                doc_text_parts.append(content)
-
-    elif isinstance(parsed_value, dict) and "content" in parsed_value:
-        doc_text_parts.append(parsed_value.get("content", ""))
-
-    else:
-        doc_text_parts.append(str(parsed_value))
-
-    return "\n\n".join(doc_text_parts)
+    return doc_text
 
 def run(session, stage_path, limit_files):
     run_id = str(uuid.uuid4())
@@ -127,8 +162,7 @@ def run(session, stage_path, limit_files):
     if limit_files is None or limit_files <= 0:
         limit_files = 10
 
-    # List PDFs from stage path
-    files = session.file.list(stage_path, pattern=r".*\.pdf$")
+    files = session.file.list(stage_path, pattern=r".*\\.pdf$")
 
     selected_files = files[:limit_files]
 
@@ -141,10 +175,6 @@ def run(session, stage_path, limit_files):
         file_name = file_path.split("/")[-1]
 
         try:
-            # Example:
-            # @DROPBOX_OPEN_MARKET_V3/Open_Market/folder/file.pdf
-            # stage_dir = @DROPBOX_OPEN_MARKET_V3/Open_Market/folder
-            # rel_file = file.pdf
             stage_dir = file_path.rsplit("/", 1)[0]
             rel_file = file_path.rsplit("/", 1)[1]
 
@@ -163,9 +193,7 @@ def run(session, stage_path, limit_files):
 
             doc_text = parse_document_value(parsed_doc_raw)
 
-            # POC safety limit for prompt length.
-            # Increase later if needed.
-            doc_text = doc_text[:90000]
+            doc_text = doc_text[:60000]
 
             prompt = f"""
 You are analyzing insurance quote discussion email chains for known NTU cases.
@@ -211,22 +239,14 @@ Rules:
 6. ntu_explanation must be concise but evidence-based.
 7. secondary_factors must be an array of short strings.
 8. do_not_use_as_primary_reason must be an array of short strings.
-9. If there is pricing comparison, broker target premium, rate cut, cheaper competing market, or larger cut request, consider price competitiveness.
-10. If there is lead market, broker already has lead terms, or another insurer driving the placement, consider broker / lead market preference.
-11. If layer changed, alternative layer was requested, or quote only works with another layer, consider layer / structure mismatch or restrictive quote condition.
-12. If quote line is very small, consider limited capacity / line size.
-13. If SRCC, CAEQ, deductibles, sublimits, wording, or coverage changes are disputed, consider terms / coverage mismatch.
-14. If losses are clean or risk is improving, mention that these should not be used as the primary reason.
 
 Email chain text:
 {doc_text}
 """
 
-            # IMPORTANT FIX:
-            # AI_COMPLETE third argument is model_parameters object, not TRUE.
             llm_sql = f"""
                 SELECT AI_COMPLETE(
-                    'claude-3-5-sonnet',
+                    '{MODEL_NAME}',
                     '{sql_escape(prompt)}',
                     OBJECT_CONSTRUCT(
                         'temperature', 0,
@@ -243,6 +263,16 @@ Email chain text:
             ntu_reason = result_json.get("ntu_reason", "Unclear / not explicitly evidenced")
             ntu_confidence = result_json.get("ntu_confidence", "Low")
             ntu_explanation = result_json.get("ntu_explanation", "")
+
+            if not result_json:
+                result_json = {
+                    "ntu_reason": ntu_reason,
+                    "ntu_confidence": ntu_confidence,
+                    "ntu_explanation": ntu_explanation,
+                    "secondary_factors": [],
+                    "do_not_use_as_primary_reason": [],
+                    "raw_text": str(llm_text)
+                }
 
             insert_sql = f"""
                 INSERT INTO NTU_REASON_POC_RESULTS
