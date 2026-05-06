@@ -1,28 +1,33 @@
-| Field                             | Extracted value / signal                                                                                               |
-| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| Insured / account                 | Ocean Properties Ltd / Ocean Prop                                                                                      |
-| Year                              | 2025                                                                                                                   |
-| Broker                            | Marsh                                                                                                                  |
-| Broker contact                    | Jamie Benjamin / Ethan Fellows                                                                                         |
-| Underwriter / insurer contact     | Rhys Thomas, Convex                                                                                                    |
-| Business type                     | Property / Open Market                                                                                                 |
-| Key exposure                      | Coastal exposure                                                                                                       |
-| Initial underwriter preference    | Write on a ventilator basis                                                                                            |
-| Primary layer quoted              | Primary 25m at 7.25m less 5%                                                                                           |
-| Excess layer quoted               | 50m xs 50m at 2.7m less 5%                                                                                             |
-| Combined quoted pricing           | Around 9.95m                                                                                                           |
-| Broker target / competing pricing | Closer to 8.75m globally; Primary target under 7m / circa 6.85m                                                        |
-| Competitor / market reference     | Ascot pricing / London lead pricing                                                                                    |
-| Final revised offer               | Primary 50m with 5% line at 8.8m less 5%                                                                               |
-| Line size                         | 5% line                                                                                                                |
-| Mentioned terms                   | Full signing, come off the 50/50                                                                                       |
-| Loss condition                    | Losses to underwriters less than 4m net for 2024 YOA                                                                   |
-| Other conditions                  | Slip and wording TBAG, NCG/Open 14 days                                                                                |
-| Evidence of lost order / NTO      | Broker repeatedly asks for movement; underwriter says cannot get to ASC pricing; long relationship “out of the window” |
+| Field                        | Extracted value / signal                                                         |
+| ---------------------------- | -------------------------------------------------------------------------------- |
+| Insured / account            | Amazon                                                                           |
+| Year                         | 2025                                                                             |
+| Business class               | Property insurance / Property renewal                                            |
+| Broker                       | WTW / Willis Towers Watson                                                       |
+| Broker contacts              | Katie Cook, Sam Grasby                                                           |
+| Insurer / underwriter        | Convex                                                                           |
+| Convex contacts              | Rhys Thomas, Dan Noble                                                           |
+| Submission date              | 19 May 2025                                                                      |
+| Submission subject           | Amazon - 2025 Submission                                                         |
+| Program inception date       | 15 June 2025                                                                     |
+| Total Insured Values / TIV   | USD 607,399,962,365                                                              |
+| Attached documents           | Schedule of Values; Submission document                                          |
+| Password for SOV             | 2025                                                                             |
+| Additional reports requested | Updated reports for top 20 locations by TIV on SOV                               |
+| Broker request               | “Please could you model your expiring participation.”                            |
+| Follow-up from broker        | Asked whether modelling was back and whether Convex was ready to discuss further |
+| Internal handling            | Rhys says Dan will look at the account this year                                 |
+| Meeting / discussion         | Time arranged with Dan                                                           |
+| Quote offered                | 4% of USD 500m xs USD 200m SIR / underlying cat deductibles                      |
+| Price / rate                 | USD 70m less 5%                                                                  |
+| Coverage basis               | RI of Chubb for non-US locations                                                 |
+| Form / wording               | LMA 5400                                                                         |
+| Conditions                   | NCG; Open 18 days; SNDILR                                                        |
+
 
 
 {
-  "nto_reason": "Uncompetitive pricing",
-  "nto_confidence": "High",
-  "nto_reason_explanation": "The email chain shows that the broker was pushing Convex to reduce pricing because competing market pricing, especially Ascot/London lead pricing, was materially lower. Convex stated they could not get to ASC pricing and later offered a revised Primary 50m line at 8.8m less 5%, but the discussion indicates the order was difficult to secure due to the pricing gap."
+  "nto_reason": "No clear NTO reason evidenced",
+  "nto_confidence": "Low",
+  "nto_reason_explanation": "The visible email chain does not clearly show that the account was declined, not taken up, or lost. The chain shows that WTW submitted the Amazon 2025 property renewal, Convex reviewed/modelling was being discussed, Dan Noble became involved, and Convex later offered terms for 4% of USD 500m xs USD 200m at USD 70m less 5%. Since a quote was offered and there is no visible message saying the order was not bound, not taken up, declined, or lost to another market, the NTO reason cannot be confidently determined from these screenshots alone."
 }
