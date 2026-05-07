@@ -1,32 +1,3 @@
-CREATE OR REPLACE TABLE OPEN_MARKET_NTU_CLASSIFICATION_OUTPUT (
-    ACCOUNT_FOLDER_NAME STRING,
-
-    COMPETITOR_UNDERCUT_SIGNIFICANTLY_ON_PRICE NUMBER(1,0),
-    PRICING_INELASTICITY NUMBER(1,0),
-    LAYER_STRUCTURE_MISMATCH NUMBER(1,0),
-    RESTRICTIVE_SUB_LIMITS NUMBER(1,0),
-    DEDUCTIBLE_MISMATCH NUMBER(1,0),
-    ORDER_SIZE_PARTICIPATION_DEFICIT NUMBER(1,0),
-    BROKER_SWITCH_DISPLACEMENT NUMBER(1,0),
-    PREFERRED_MARKET_PARTNERSHIPS NUMBER(1,0),
-    FACILITY_LINE_SLIP_DISPLACEMENT NUMBER(1,0),
-    NEGOTIATION_FATIGUE NUMBER(1,0),
-    LATE_QUOTE NUMBER(1,0),
-    CAPTIVE_EXPANSION_SECURITIZATION NUMBER(1,0),
-    COMPOSITE_MULTI_CLASS_BUNDLING NUMBER(1,0),
-
-    NTU_EXPLANATION STRING,
-    DATE_OF_FIRST_CONVERSATION_STARTED STRING,
-    DATE_OF_LAST_CONVERSATION STRING,
-    NO_OF_EMAILS_TRANSFERRED_IN_BETWEEN NUMBER,
-
-    FILES_PROCESSED NUMBER,
-    RAW_LLM_RESPONSE VARIANT,
-    CREATED_AT TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
-);
-
-
-
 CREATE OR REPLACE PROCEDURE RUN_OPEN_MARKET_NTU_CLASSIFICATION(LIMIT_N_FOLDERS NUMBER)
 RETURNS STRING
 LANGUAGE PYTHON
@@ -38,6 +9,7 @@ AS
 $$
 import json
 import re
+import ast
 
 STAGE_NAME = '@OPEN_MARKET_QUOTE'
 ROOT_PATH = 'Open_Market/'
@@ -85,6 +57,105 @@ def safe_int(value):
         return 0
 
 
+def parse_json_robust(value):
+    """
+    Handles:
+    1. normal JSON string
+    2. Python dict string with single quotes
+    3. Snowflake VARIANT-like dict
+    """
+    if value is None:
+        return None
+
+    if isinstance(value, dict):
+        return value
+
+    txt = str(value).strip()
+
+    try:
+        return json.loads(txt)
+    except Exception:
+        pass
+
+    try:
+        return ast.literal_eval(txt)
+    except Exception:
+        pass
+
+    return None
+
+
+def extract_model_message(ai_complete_response):
+    """
+    AI_COMPLETE with options can return:
+    {
+      "choices": [
+        {
+          "messages": "model text"
+        }
+      ],
+      "created": ...,
+      "model": ...
+    }
+
+    Sometimes Snowpark may already return this as a dict.
+    """
+    parsed = parse_json_robust(ai_complete_response)
+
+    if isinstance(parsed, dict):
+        if 'choices' in parsed:
+            choices = parsed.get('choices') or []
+            if len(choices) > 0:
+                first_choice = choices[0]
+                if isinstance(first_choice, dict):
+                    msg = first_choice.get('messages')
+                    if msg is not None:
+                        return str(msg)
+
+        # In case AI_COMPLETE returns the JSON directly
+        if 'ntu_explanation' in parsed:
+            return json.dumps(parsed)
+
+    return str(ai_complete_response)
+
+
+def parse_llm_json(response_text):
+    """
+    Extracts only the inner JSON object returned by the model.
+    """
+    if response_text is None:
+        raise Exception("Empty LLM response")
+
+    txt = str(response_text).strip()
+
+    txt = txt.replace("```json", "").replace("```", "").strip()
+
+    # Direct JSON parse first
+    try:
+        return json.loads(txt)
+    except Exception:
+        pass
+
+    # Sometimes the text contains prose before/after JSON.
+    first = txt.find("{")
+    last = txt.rfind("}")
+
+    if first >= 0 and last >= 0 and last > first:
+        candidate = txt[first:last + 1]
+
+        try:
+            return json.loads(candidate)
+        except Exception:
+            pass
+
+        try:
+            return ast.literal_eval(candidate)
+        except Exception:
+            pass
+
+    raise Exception("Could not parse LLM JSON. First 500 chars: " + txt[:500])
+
+
 def parse_file_text(session, relative_path):
     try:
         q = f"""
@@ -101,32 +172,28 @@ def parse_file_text(session, relative_path):
         if parsed is None:
             return ''
 
-        if isinstance(parsed, str):
-            parsed_obj = json.loads(parsed)
-        else:
-            parsed_obj = parsed
+        parsed_obj = parse_json_robust(parsed)
 
         if isinstance(parsed_obj, dict) and parsed_obj.get('error'):
             return f"\\n[PARSE_ERROR for {relative_path}: {parsed_obj.get('error')}]\\n"
 
-        value = parsed_obj.get('value') if isinstance(parsed_obj, dict) else parsed_obj
+        value = parsed_obj.get('value') if isinstance(parsed_obj, dict) else parsed
 
-        if isinstance(value, str):
-            try:
-                value = json.loads(value)
-            except Exception:
-                return value
+        value_obj = parse_json_robust(value)
 
-        if isinstance(value, dict):
-            if 'content' in value:
-                return value.get('content') or ''
+        if isinstance(value_obj, dict):
+            if 'content' in value_obj:
+                return value_obj.get('content') or ''
 
-            if 'pages' in value:
+            if 'pages' in value_obj:
                 return '\\n\\n'.join([
                     p.get('content', '')
-                    for p in value.get('pages', [])
+                    for p in value_obj.get('pages', [])
                     if isinstance(p, dict)
                 ])
+
+        if isinstance(value, str):
+            return value
 
         return str(value)
 
@@ -252,17 +319,13 @@ def classify_with_llm(session, account_folder_name, combined_text):
     if response is None:
         raise Exception("AI_COMPLETE returned NULL")
 
-    response_text = str(response).strip()
+    model_message = extract_model_message(response)
+    result = parse_llm_json(model_message)
 
-    response_text = response_text.replace("```json", "").replace("```", "").strip()
+    if not isinstance(result, dict):
+        raise Exception("LLM JSON was not an object")
 
-    first = response_text.find("{")
-    last = response_text.rfind("}")
-
-    if first >= 0 and last >= 0:
-        response_text = response_text[first:last + 1]
-
-    return json.loads(response_text)
+    return result
 
 
 def insert_result(session, account_folder_name, result, files_processed):
