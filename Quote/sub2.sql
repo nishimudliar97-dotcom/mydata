@@ -1,38 +1,3 @@
-CREATE OR REPLACE TABLE OPEN_MARKET_NTU_CLASSIFICATION_OUTPUT (
-    ACCOUNT_FOLDER_NAME STRING,
-
-    COMPETITOR_UNDERCUT_SIGNIFICANTLY_ON_PRICE NUMBER(1,0),
-    PRICING_INELASTICITY NUMBER(1,0),
-    LAYER_STRUCTURE_MISMATCH NUMBER(1,0),
-    RESTRICTIVE_SUB_LIMITS NUMBER(1,0),
-    DEDUCTIBLE_MISMATCH NUMBER(1,0),
-    ORDER_SIZE_PARTICIPATION_DEFICIT NUMBER(1,0),
-    BROKER_SWITCH_DISPLACEMENT NUMBER(1,0),
-    PREFERRED_MARKET_PARTNERSHIPS NUMBER(1,0),
-    FACILITY_LINE_SLIP_DISPLACEMENT NUMBER(1,0),
-    NEGOTIATION_FATIGUE NUMBER(1,0),
-    LATE_QUOTE NUMBER(1,0),
-    CAPTIVE_EXPANSION_SECURITIZATION NUMBER(1,0),
-    COMPOSITE_MULTI_CLASS_BUNDLING NUMBER(1,0),
-
-    NTU_EXPLANATION STRING,
-    DATE_OF_FIRST_CONVERSATION_STARTED STRING,
-    DATE_OF_LAST_CONVERSATION STRING,
-    NO_OF_EMAILS_TRANSFERRED_IN_BETWEEN NUMBER,
-
-    FILES_PROCESSED NUMBER,
-    RAW_LLM_RESPONSE VARIANT,
-    CREATED_AT TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
-);
-
-CREATE OR REPLACE TABLE OPEN_MARKET_NTU_CLASSIFICATION_ERROR_LOG (
-    ACCOUNT_FOLDER_NAME STRING,
-    ERROR_MESSAGE STRING,
-    RAW_LLM_RESPONSE STRING,
-    FILES_PROCESSED NUMBER,
-    CREATED_AT TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
-);
-
 CREATE OR REPLACE PROCEDURE RUN_OPEN_MARKET_NTU_CLASSIFICATION(LIMIT_N_FOLDERS NUMBER)
 RETURNS STRING
 LANGUAGE PYTHON
@@ -88,26 +53,19 @@ def safe_int(value):
     try:
         if value is None:
             return 0
-
-        v = str(value).strip()
-
+        v = str(value).strip().replace(",", "")
         if v == '':
             return 0
-
-        v = v.replace(",", "")
-
         return int(float(v))
     except Exception:
         return 0
 
 
 def extract_value(raw_text, key):
-    pattern = rf"{key}\\s*:\\s*(.*)"
-    match = re.search(pattern, raw_text, re.IGNORECASE)
-
+    pattern = rf"^\s*{key}\s*:\s*(.*)$"
+    match = re.search(pattern, raw_text, re.IGNORECASE | re.MULTILINE)
     if not match:
         return None
-
     return match.group(1).strip()
 
 
@@ -119,7 +77,6 @@ def extract_explanation(raw_text):
         return match.group(1).strip()
 
     idx = raw_text.upper().find("NTU_EXPLANATION")
-
     if idx >= 0:
         return raw_text[idx:].strip()
 
@@ -148,7 +105,7 @@ def parse_file_text(session, relative_path):
             parsed_obj = parsed
 
         if isinstance(parsed_obj, dict) and parsed_obj.get('error'):
-            return f"\\n[PARSE_ERROR for {relative_path}: {parsed_obj.get('error')}]\\n"
+            return f"\n[PARSE_ERROR for {relative_path}: {parsed_obj.get('error')}]\n"
 
         if isinstance(parsed_obj, dict):
             value = parsed_obj.get('value')
@@ -165,7 +122,7 @@ def parse_file_text(session, relative_path):
                 return value_obj.get('content') or ''
 
             if 'pages' in value_obj:
-                return '\\n\\n'.join([
+                return '\n\n'.join([
                     p.get('content', '')
                     for p in value_obj.get('pages', [])
                     if isinstance(p, dict)
@@ -174,33 +131,35 @@ def parse_file_text(session, relative_path):
         return str(value)
 
     except Exception as e:
-        return f"\\n[PARSE_EXCEPTION for {relative_path}: {str(e)}]\\n"
+        return f"\n[PARSE_EXCEPTION for {relative_path}: {str(e)}]\n"
 
 
-def extract_email_dates_and_count(combined_text):
-    text = combined_text or ""
+def normalize_text_for_dates(text):
+    text = text or ""
+    text = text.replace("\r", "\n")
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n+", "\n", text)
+    return text
 
-    date_candidates = []
 
-    patterns = [
-        r"Sent:\\s*[A-Za-z]+,\\s*([A-Za-z]+\\s+\\d{1,2},\\s+\\d{4}\\s+\\d{1,2}:\\d{2}\\s*(?:AM|PM)?)",
-        r"Sent:\\s*([A-Za-z]+\\s+\\d{1,2},\\s+\\d{4}\\s+\\d{1,2}:\\d{2}\\s*(?:AM|PM)?)",
-        r"On\\s+[A-Za-z]+,\\s*(\\d{1,2}\\s+[A-Za-z]+\\s+\\d{4})\\s+at\\s+(\\d{1,2}:\\d{2})",
-        r"On\\s+[A-Za-z]+,\\s*([A-Za-z]+\\s+\\d{1,2},\\s+\\d{4})\\s+at\\s+(\\d{1,2}:\\d{2}\\s*(?:AM|PM)?)",
-        r"([A-Za-z]+,\\s+[A-Za-z]+\\s+\\d{1,2},\\s+\\d{4}\\s+\\d{1,2}:\\d{2}\\s*(?:AM|PM)?)",
-        r"(\\d{1,2}/\\d{1,2}/\\d{4},\\s*\\d{1,2}:\\d{2})",
-        r"(\\d{1,2}/\\d{1,2}/\\d{4}\\s+\\d{1,2}:\\d{2})",
-        r"(\\d{4}-\\d{2}-\\d{2}\\s+\\d{1,2}:\\d{2})",
-        r"(\\d{4}-\\d{2}-\\d{2})"
-    ]
+def parse_date_candidate(raw):
+    raw = re.sub(r"\s+", " ", raw or "").strip()
+    raw = raw.replace(" at ", " ")
+    raw = raw.replace(",", ", ")
+
+    raw = re.sub(r"\s+", " ", raw).strip()
 
     formats = [
-        "%B %d, %Y %I:%M %p",
-        "%B %d, %Y %H:%M",
         "%A, %B %d, %Y %I:%M %p",
         "%A, %B %d, %Y %H:%M",
+        "%B %d, %Y %I:%M %p",
+        "%B %d, %Y %H:%M",
+        "%a, %d %b %Y %H:%M",
+        "%a, %d %b %Y %I:%M %p",
         "%d %b %Y %H:%M",
+        "%d %b %Y %I:%M %p",
         "%d %B %Y %H:%M",
+        "%d %B %Y %I:%M %p",
         "%d/%m/%Y, %H:%M",
         "%d/%m/%Y %H:%M",
         "%m/%d/%Y, %H:%M",
@@ -209,38 +168,52 @@ def extract_email_dates_and_count(combined_text):
         "%Y-%m-%d"
     ]
 
-    for pattern in patterns:
-        for match in re.finditer(pattern, text, re.IGNORECASE):
-            if len(match.groups()) == 2:
-                raw = match.group(1) + " " + match.group(2)
-            else:
-                raw = match.group(1)
+    for fmt in formats:
+        try:
+            return datetime.strptime(raw, fmt)
+        except Exception:
+            continue
 
-            raw = re.sub(r"\\s+", " ", raw).strip()
+    return None
 
-            for fmt in formats:
-                try:
-                    dt = datetime.strptime(raw, fmt)
-                    date_candidates.append(dt)
-                    break
-                except Exception:
-                    continue
 
-    count_patterns = [
-        r"\\bFrom:\\s+",
-        r"\\bSent:\\s+",
-        r"\\bSubject:\\s+",
-        r"\\bOn\\s+[A-Za-z]+,\\s+.*?\\s+wrote:",
-        r"\\bwrote:"
+def extract_email_dates_and_count(combined_text):
+    text = normalize_text_for_dates(combined_text)
+
+    date_candidates = []
+
+    date_patterns = [
+        r"Sent:\s*([A-Za-z]+,\s+[A-Za-z]+\s+\d{1,2},\s+\d{4}\s+\d{1,2}:\d{2}\s*(?:AM|PM)?)",
+        r"Sent:\s*([A-Za-z]+\s+\d{1,2},\s+\d{4}\s+\d{1,2}:\d{2}\s*(?:AM|PM)?)",
+        r"On\s+([A-Za-z]+,\s+\d{1,2}\s+[A-Za-z]+\s+\d{4}\s+at\s+\d{1,2}:\d{2})",
+        r"On\s+([A-Za-z]+,\s+[A-Za-z]+\s+\d{1,2},\s+\d{4}\s+at\s+\d{1,2}:\d{2}\s*(?:AM|PM)?)",
+        r"(\d{1,2}/\d{1,2}/\d{4},\s*\d{1,2}:\d{2})",
+        r"(\d{1,2}/\d{1,2}/\d{4}\s+\d{1,2}:\d{2})",
+        r"(\d{4}-\d{2}-\d{2}\s+\d{1,2}:\d{2})",
+        r"(\d{4}-\d{2}-\d{2})"
     ]
 
-    counts = []
+    for pattern in date_patterns:
+        for match in re.finditer(pattern, text, re.IGNORECASE):
+            raw = match.group(1)
+            dt = parse_date_candidate(raw)
+            if dt:
+                date_candidates.append(dt)
 
-    for cp in count_patterns:
-        counts.append(len(re.findall(cp, text, re.IGNORECASE | re.DOTALL)))
+    # Email chains normally have repeated From/Sent/Subject blocks.
+    from_count = len(re.findall(r"(?im)^\s*From:\s+", text))
+    sent_count = len(re.findall(r"(?im)^\s*Sent:\s+", text))
+    subject_count = len(re.findall(r"(?im)^\s*Subject:\s+", text))
+    wrote_count = len(re.findall(r"(?i)\bOn\s+.{0,120}?\bwrote:", text))
+    forwarded_count = len(re.findall(r"(?i)-{2,}\s*Forwarded message\s*-{2,}", text))
 
-    email_count = max(counts) if counts else 0
+    email_count = max(from_count, sent_count, subject_count, wrote_count, forwarded_count)
 
+    # If dates are found but message blocks are not cleanly parsed, use date count as fallback.
+    if email_count < len(date_candidates):
+        email_count = len(date_candidates)
+
+    # If multiple files exist and text exists, minimum should not be 1 unless truly only one message found.
     if email_count == 0 and len(text.strip()) > 200:
         email_count = 1
 
@@ -254,95 +227,217 @@ def extract_email_dates_and_count(combined_text):
     return first_dt, last_dt, email_count
 
 
-def build_prompt(account_folder_name, combined_text):
+def derive_rule_based_flags(combined_text, email_count):
+    text = (combined_text or "").lower()
+
+    flags = {
+        "competitor_undercut_significantly_on_price": 0,
+        "pricing_inelasticity": 0,
+        "layer_structure_mismatch": 0,
+        "restrictive_sub_limits": 0,
+        "deductible_mismatch": 0,
+        "order_size_participation_deficit": 0,
+        "broker_switch_displacement": 0,
+        "preferred_market_partnerships": 0,
+        "facility_line_slip_displacement": 0,
+        "negotiation_fatigue": 0,
+        "late_quote": 0,
+        "captive_expansion_securitization": 0,
+        "composite_multi_class_bundling": 0
+    }
+
+    # Pricing / competitor signals
+    if any(x in text for x in [
+        "undercut", "cheaper", "lower premium", "lower rate", "more competitive",
+        "competitive quote", "market pricing", "too expensive", "way too expensive",
+        "not going to get near", "won't get near", "cannot get near", "price is too high"
+    ]):
+        flags["competitor_undercut_significantly_on_price"] = 1
+
+    if any(x in text for x in [
+        "too expensive", "way too expensive", "technical price", "technical pricing",
+        "target pricing", "target price", "pricing is likely to bind",
+        "pricing which is likely to bind", "not going to get near", "won't get near",
+        "premium too high", "rate too high"
+    ]):
+        flags["pricing_inelasticity"] = 1
+
+    # Structure signals
+    if any(x in text for x in [
+        "quota share", "layered structure", "layered", "primary or excess",
+        "primary", "excess", "attachment", "attach", "xs ", " x/s ",
+        "layer", "layers further up", "vertical", "structure"
+    ]):
+        flags["layer_structure_mismatch"] = 1
+
+    # Sublimit signals
+    if any(x in text for x in [
+        "sub-limit", "sublimit", "sub limits", "sub-limits", "flood sublimit",
+        "wind sublimit", "eq sublimit", "named windstorm", "coverage restriction"
+    ]):
+        flags["restrictive_sub_limits"] = 1
+
+    # Deductible signals
+    if any(x in text for x in [
+        "deductible", "retention", "sir", "self insured retention", "self-insured retention"
+    ]):
+        flags["deductible_mismatch"] = 1
+
+    # Capacity / line size / order signals
+    if any(x in text for x in [
+        "capacity", "line size", "line %", "participation", "order", "share",
+        "full order", "stretch", "quota share stretch", "increase to help fill",
+        "available capacity", "smaller line", "line yesterday"
+    ]):
+        flags["order_size_participation_deficit"] = 1
+
+    # Preferred/incumbent market signals
+    if any(x in text for x in [
+        "incumbent", "lead market", "led by", "beazley", "fm", "existing market",
+        "current lead", "current market", "panel", "preferred market"
+    ]):
+        flags["preferred_market_partnerships"] = 1
+
+    # Facility / line slip
+    if any(x in text for x in [
+        "facility", "line slip", "lineslip", "binder", "delegated", "pre-agreed"
+    ]):
+        flags["facility_line_slip_displacement"] = 1
+
+    # Late quote signals
+    if any(x in text for x in [
+        "asap", "reply asap", "respond asap", "urgent", "urgently",
+        "by cop", "cop friday", "close of play", "deadline",
+        "please advise your interest by", "need your interest by",
+        "bind today", "bind tomorrow", "last chance", "call with client"
+    ]):
+        flags["late_quote"] = 1
+
+    # Negotiation fatigue
+    if email_count >= 4 or any(x in text for x in [
+        "further to my email", "following up", "chaser", "chasing",
+        "any update", "still waiting", "back and forth", "again",
+        "revised", "revision", "updated terms"
+    ]):
+        flags["negotiation_fatigue"] = 1
+
+    # Broker switch / displacement
+    if any(x in text for x in [
+        "new broker", "broker changed", "switch broker", "different broker",
+        "local office", "continue your contact through us"
+    ]):
+        flags["broker_switch_displacement"] = 1
+
+    # Captive / securitization
+    if any(x in text for x in [
+        "captive", "self insure", "self-insure", "self insurance",
+        "retained more risk", "risk financing", "securitization", "capital market"
+    ]):
+        flags["captive_expansion_securitization"] = 1
+
+    # Composite / multi-class
+    if any(x in text for x in [
+        "multi-class", "multiclass", "composite", "package", "bundled",
+        "combined placement", "property and casualty", "property and liability"
+    ]):
+        flags["composite_multi_class_bundling"] = 1
+
+    return flags
+
+
+def build_prompt(account_folder_name, combined_text, first_date, last_date, email_count, rule_flags):
     return f"""
 You are an expert insurance underwriting placement analyst working on Convex NTU reason classification.
 
-VERY IMPORTANT BUSINESS CONTEXT:
-Every account folder given to you is already confirmed as an NTU / not-taken-up / not-bound / not-written case.
+VERY IMPORTANT:
+Every account folder given to you is already a confirmed NTU / not-taken-up / not-bound / not-written case.
+Do NOT decide whether it is NTU.
+Do NOT say there is no NTU evidence.
+Do NOT say this looks like a successful placement.
+Your job is to infer the most likely reason Convex did not bind or did not win the placement.
 
-Your job is NOT to decide whether this is an NTU case.
-Your job is to infer the most likely NTU reason or reasons from the conversation.
+EMAIL CHAIN CONTEXT:
+Insurance email chains usually read bottom-to-top.
+The oldest email is often lower in the chain.
+The newest reply is often at the top.
+So interpret the whole chain chronologically using the dates and reply blocks.
 
-You must not say:
-- no NTU evidence
-- not an NTU case
-- successful placement
-- no reason can be determined
-- no indication of NTU
+System-extracted conversation metadata:
+FIRST_CONVERSATION_DATE: {first_date}
+LAST_CONVERSATION_DATE: {last_date}
+APPROX_EMAIL_COUNT: {email_count}
 
-Even if the email chain does not explicitly say "NTU", infer the likely business reason from available signals:
-- pricing comments
-- broker deadlines
-- competing market references
-- capacity requests
-- line size requests
-- order size requests
-- structure discussions
-- primary / excess / quota share discussion
-- deductible or sublimit terms
-- incumbent or lead market references
-- broker asking for interest but no final bind confirmation
-- Convex saying pricing is expensive or unlikely to bind
-- Convex only offering limited participation
-- broker moving forward with another market
-- long back-and-forth negotiation
-- late response or missed timing
+Rule-based signal hints already detected from the text:
+COMPETITOR_UNDERCUT_SIGNIFICANTLY_ON_PRICE_HINT: {rule_flags["competitor_undercut_significantly_on_price"]}
+PRICING_INELASTICITY_HINT: {rule_flags["pricing_inelasticity"]}
+LAYER_STRUCTURE_MISMATCH_HINT: {rule_flags["layer_structure_mismatch"]}
+RESTRICTIVE_SUB_LIMITS_HINT: {rule_flags["restrictive_sub_limits"]}
+DEDUCTIBLE_MISMATCH_HINT: {rule_flags["deductible_mismatch"]}
+ORDER_SIZE_PARTICIPATION_DEFICIT_HINT: {rule_flags["order_size_participation_deficit"]}
+BROKER_SWITCH_DISPLACEMENT_HINT: {rule_flags["broker_switch_displacement"]}
+PREFERRED_MARKET_PARTNERSHIPS_HINT: {rule_flags["preferred_market_partnerships"]}
+FACILITY_LINE_SLIP_DISPLACEMENT_HINT: {rule_flags["facility_line_slip_displacement"]}
+NEGOTIATION_FATIGUE_HINT: {rule_flags["negotiation_fatigue"]}
+LATE_QUOTE_HINT: {rule_flags["late_quote"]}
+CAPTIVE_EXPANSION_SECURITIZATION_HINT: {rule_flags["captive_expansion_securitization"]}
+COMPOSITE_MULTI_CLASS_BUNDLING_HINT: {rule_flags["composite_multi_class_bundling"]}
 
-You must mark at least one of the 13 subcategory flags as 1.
-Multiple flags can be 1 if the case supports more than one reason.
-
-Do not be overly conservative.
-Use best-fit commercial underwriting judgement.
+Use these hints as supporting evidence, but still read the complete conversation and make final judgement.
 
 NTU subcategory definitions:
 
 1. COMPETITOR_UNDERCUT_SIGNIFICANTLY_ON_PRICE:
-Mark 1 when the conversation suggests Convex lost because another insurer/market offered cheaper pricing, lower rate, better premium, or the broker had more competitive alternatives. Also mark 1 if Convex pricing is described as too expensive compared to market pricing.
+Mark 1 if another market appears cheaper, more competitive, already leading at better price, or Convex says it cannot get near market pricing.
 
 2. PRICING_INELASTICITY:
-Mark 1 when Convex had a technical price/rate requirement and could not or would not reduce pricing enough to meet broker/client target. Also mark 1 when Convex says pricing would be too expensive, not likely to bind, or far from market.
+Mark 1 if Convex pricing appears too high, target pricing cannot be met, Convex cannot reduce enough, or Convex says the price is unlikely to bind.
 
 3. LAYER_STRUCTURE_MISMATCH:
-Mark 1 when the broker wanted quota share, primary, excess, full limit, attachment point, or specific layer structure and Convex preferred or proposed a different structure.
+Mark 1 if the broker wanted quota share / primary / excess / attachment / layer / layered structure, but Convex preference or appetite did not match.
 
 4. RESTRICTIVE_SUB_LIMITS:
-Mark 1 when terms include restrictive sublimits or coverage limitations on flood, wind, named windstorm, EQ, BI, CAT, contingent BI, or other key covers.
+Mark 1 if sublimits or coverage restrictions appear to be a negative factor.
 
 5. DEDUCTIBLE_MISMATCH:
-Mark 1 when deductibles/SIR/retentions are too high, different from target, or less attractive than other markets.
+Mark 1 if deductible, SIR, retention, or NatCat deductible appears to be a negative factor or mismatch.
 
 6. ORDER_SIZE_PARTICIPATION_DEFICIT:
-Mark 1 when broker/client requested a specific line size, participation percentage, capacity, quota share, or full order but Convex could only provide less, wanted a smaller line, or could not support the requested stretch.
+Mark 1 if broker wanted more capacity, a larger share, a specific line, or full participation but Convex could not support enough.
 
 7. BROKER_SWITCH_DISPLACEMENT:
-Mark 1 when broker change, placement route change, communication gap, or another broker/channel caused Convex to be displaced or not properly engaged.
+Mark 1 if broker/channel change, local office routing, or communication routing may have displaced Convex.
 
 8. PREFERRED_MARKET_PARTNERSHIPS:
-Mark 1 when broker/client appears to favour incumbent markets, existing carriers, panel markets, lead markets, Beazley/FM/other named markets, or strategic relationships.
+Mark 1 if incumbent/lead/named markets appear favoured or already had the order.
 
 9. FACILITY_LINE_SLIP_DISPLACEMENT:
-Mark 1 when the account appears to be placed into a facility, line slip, delegated arrangement, binder, pre-agreed placement, or operational placement route bypassing individual Convex quote.
+Mark 1 if the placement likely went through a facility, line slip, binder, or delegated channel.
 
 10. NEGOTIATION_FATIGUE:
-Mark 1 when there are repeated follow-ups, multiple back-and-forth messages, repeated pricing/structure discussions, or the conversation loses momentum.
+Mark 1 if there are repeated emails, chasers, follow-ups, several back-and-forths, or loss of momentum. If APPROX_EMAIL_COUNT is 4 or more, strongly consider marking this as 1.
 
 11. LATE_QUOTE:
-Mark 1 when Convex response appears late versus broker deadline, after broker asks for urgent interest, after a COP/deadline, or when another market/order may already have progressed.
+Mark 1 if broker requested urgent reply, ASAP response, COP deadline, client call, or interest by a certain date. Even if exact deadline comparison is unclear, urgency/deadline language is enough to mark 1.
 
 12. CAPTIVE_EXPANSION_SECURITIZATION:
-Mark 1 when client retained more risk, used captive, self-insurance, risk financing, securitization, or capital-market alternative.
+Mark 1 if risk retention/captive/self-insurance/capital market alternative appears.
 
 13. COMPOSITE_MULTI_CLASS_BUNDLING:
-Mark 1 when property risk appears bundled into a multi-class placement where Convex could not participate due to product/class mismatch.
+Mark 1 if bundled/multi-class/composite placement appears.
 
-Output format rules:
+Decision rules:
+- At least one flag must be 1.
+- Do not mark only PRICING_INELASTICITY unless pricing is clearly the main issue.
+- If there is "ASAP", "COP", "deadline", "client call", or "advise interest by", LATE_QUOTE should usually be 1.
+- If there are 4 or more email messages, NEGOTIATION_FATIGUE should usually be 1.
+- If there is primary/excess/layer/quota-share language, LAYER_STRUCTURE_MISMATCH should usually be 1.
+- If there is capacity/share/line/order/stretch language, ORDER_SIZE_PARTICIPATION_DEFICIT should usually be 1.
+- Multiple flags are allowed and expected.
+
 Return output in EXACTLY this format.
 Do not return JSON.
 Do not return markdown.
 Do not add extra keys.
-Each flag must be 0 or 1.
-At least one flag must be 1.
 
 COMPETITOR_UNDERCUT_SIGNIFICANTLY_ON_PRICE: 0
 PRICING_INELASTICITY: 0
@@ -358,9 +453,10 @@ LATE_QUOTE: 0
 CAPTIVE_EXPANSION_SECURITIZATION: 0
 COMPOSITE_MULTI_CLASS_BUNDLING: 0
 NTU_EXPLANATION_START
-Write a detailed granular explanation of the inferred NTU reason.
-Explain why each selected flag was marked as 1.
-Mention concrete evidence from the email chain.
+Write a detailed granular explanation.
+Explain the likely NTU reason.
+Explain why each selected flag was marked 1.
+Mention evidence from the email chain.
 Do not say this is not an NTU case.
 NTU_EXPLANATION_END
 
@@ -373,7 +469,17 @@ Combined conversation text:
 
 
 def classify_with_llm(session, account_folder_name, combined_text):
-    prompt = build_prompt(account_folder_name, combined_text)
+    first_date, last_date, email_count = extract_email_dates_and_count(combined_text)
+    rule_flags = derive_rule_based_flags(combined_text, email_count)
+
+    prompt = build_prompt(
+        account_folder_name,
+        combined_text,
+        first_date,
+        last_date,
+        email_count,
+        rule_flags
+    )
 
     q = f"""
         SELECT AI_COMPLETE(
@@ -389,8 +495,6 @@ def classify_with_llm(session, account_folder_name, combined_text):
         raise Exception("AI_COMPLETE returned NULL")
 
     raw = str(response).strip()
-
-    first_date, last_date, email_count = extract_email_dates_and_count(combined_text)
 
     result = {
         "competitor_undercut_significantly_on_price": safe_int(extract_value(raw, "COMPETITOR_UNDERCUT_SIGNIFICANTLY_ON_PRICE")),
@@ -428,52 +532,28 @@ def classify_with_llm(session, account_folder_name, combined_text):
         "composite_multi_class_bundling"
     ]
 
+    # Apply deterministic signals as overrides/additions, not only fallback.
+    # This prevents missing late quote / negotiation fatigue when clear phrases exist.
+    for k in flag_keys:
+        if rule_flags.get(k, 0) == 1:
+            result[k] = 1
+
+    # Prevent all-zero because every account is confirmed NTU.
     if sum([safe_int(result.get(k)) for k in flag_keys]) == 0:
-        combined_lower = (combined_text or "").lower()
-
-        if any(x in combined_lower for x in [
-            "too expensive",
-            "pricing",
-            "premium",
-            "rate",
-            "market pricing",
-            "not going to get near",
-            "not get near",
-            "price",
-            "quote"
-        ]):
-            result["pricing_inelasticity"] = 1
-
-        elif any(x in combined_lower for x in [
-            "quota share",
-            "primary",
-            "excess",
-            "layer",
-            "attachment",
-            " xs ",
-            "structure"
-        ]):
-            result["layer_structure_mismatch"] = 1
-
-        elif any(x in combined_lower for x in [
-            "capacity",
-            "line",
-            "share",
-            "participation",
-            "order",
-            "limit"
-        ]):
-            result["order_size_participation_deficit"] = 1
-
-        elif email_count >= 5:
+        if email_count >= 4:
             result["negotiation_fatigue"] = 1
-
+        elif rule_flags["late_quote"] == 1:
+            result["late_quote"] = 1
+        elif rule_flags["layer_structure_mismatch"] == 1:
+            result["layer_structure_mismatch"] = 1
+        elif rule_flags["order_size_participation_deficit"] == 1:
+            result["order_size_participation_deficit"] = 1
         else:
-            result["pricing_inelasticity"] = 1
+            result["preferred_market_partnerships"] = 1
 
         result["ntu_explanation"] = (
             "This account is part of the confirmed NTU population. "
-            "The model output did not strongly select a category, so a best-fit fallback was applied based on the available conversation signals. "
+            "A best-fit NTU category was selected using deterministic email-chain signals because the model did not strongly select a category. "
             + (result.get("ntu_explanation") or "")
         )
 
@@ -608,10 +688,10 @@ def main(session, LIMIT_N_FOLDERS):
 
                 if parsed_text and parsed_text.strip():
                     all_text_parts.append(
-                        f"\\n\\n===== FILE: {file_path} =====\\n{parsed_text}"
+                        f"\n\n===== FILE: {file_path} =====\n{parsed_text}"
                     )
 
-            combined_text = "\\n".join(all_text_parts)
+            combined_text = "\n".join(all_text_parts)
 
             if not combined_text.strip():
                 failed += 1
