@@ -1,3 +1,40 @@
+CREATE OR REPLACE TABLE OPEN_MARKET_NTU_CLASSIFICATION_OUTPUT (
+    ACCOUNT_FOLDER_NAME STRING,
+
+    COMPETITOR_UNDERCUT_SIGNIFICANTLY_ON_PRICE NUMBER(1,0),
+    PRICING_INELASTICITY NUMBER(1,0),
+    LAYER_STRUCTURE_MISMATCH NUMBER(1,0),
+    RESTRICTIVE_SUB_LIMITS NUMBER(1,0),
+    DEDUCTIBLE_MISMATCH NUMBER(1,0),
+    ORDER_SIZE_PARTICIPATION_DEFICIT NUMBER(1,0),
+    BROKER_SWITCH_DISPLACEMENT NUMBER(1,0),
+    PREFERRED_MARKET_PARTNERSHIPS NUMBER(1,0),
+    FACILITY_LINE_SLIP_DISPLACEMENT NUMBER(1,0),
+    NEGOTIATION_FATIGUE NUMBER(1,0),
+    LATE_QUOTE NUMBER(1,0),
+    CAPTIVE_EXPANSION_SECURITIZATION NUMBER(1,0),
+    COMPOSITE_MULTI_CLASS_BUNDLING NUMBER(1,0),
+
+    NTU_EXPLANATION STRING,
+    DATE_OF_FIRST_CONVERSATION_STARTED STRING,
+    DATE_OF_LAST_CONVERSATION STRING,
+    NO_OF_EMAILS_TRANSFERRED_IN_BETWEEN NUMBER,
+
+    FILES_PROCESSED NUMBER,
+    RAW_LLM_RESPONSE VARIANT,
+    CREATED_AT TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
+);
+
+
+CREATE OR REPLACE TABLE OPEN_MARKET_NTU_CLASSIFICATION_ERROR_LOG (
+    ACCOUNT_FOLDER_NAME STRING,
+    ERROR_MESSAGE STRING,
+    RAW_LLM_RESPONSE STRING,
+    FILES_PROCESSED NUMBER,
+    CREATED_AT TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
+);
+
+
 CREATE OR REPLACE PROCEDURE RUN_OPEN_MARKET_NTU_CLASSIFICATION(LIMIT_N_FOLDERS NUMBER)
 RETURNS STRING
 LANGUAGE PYTHON
@@ -22,6 +59,7 @@ SUPPORTED_EXTENSIONS = (
 )
 
 OUTPUT_TABLE = 'OPEN_MARKET_NTU_CLASSIFICATION_OUTPUT'
+ERROR_TABLE = 'OPEN_MARKET_NTU_CLASSIFICATION_ERROR_LOG'
 
 
 def sql_escape(value):
@@ -57,17 +95,14 @@ def safe_int(value):
         return 0
 
 
-def parse_json_robust(value):
-    """
-    Handles:
-    1. normal JSON string
-    2. Python dict string with single quotes
-    3. Snowflake VARIANT-like dict
-    """
+def try_parse_json_or_python(value):
     if value is None:
         return None
 
     if isinstance(value, dict):
+        return value
+
+    if isinstance(value, list):
         return value
 
     txt = str(value).strip()
@@ -85,75 +120,60 @@ def parse_json_robust(value):
     return None
 
 
-def extract_model_message(ai_complete_response):
-    """
-    AI_COMPLETE with options can return:
-    {
-      "choices": [
-        {
-          "messages": "model text"
-        }
-      ],
-      "created": ...,
-      "model": ...
-    }
-
-    Sometimes Snowpark may already return this as a dict.
-    """
-    parsed = parse_json_robust(ai_complete_response)
-
-    if isinstance(parsed, dict):
-        if 'choices' in parsed:
-            choices = parsed.get('choices') or []
-            if len(choices) > 0:
-                first_choice = choices[0]
-                if isinstance(first_choice, dict):
-                    msg = first_choice.get('messages')
-                    if msg is not None:
-                        return str(msg)
-
-        # In case AI_COMPLETE returns the JSON directly
-        if 'ntu_explanation' in parsed:
-            return json.dumps(parsed)
-
-    return str(ai_complete_response)
-
-
-def parse_llm_json(response_text):
-    """
-    Extracts only the inner JSON object returned by the model.
-    """
-    if response_text is None:
+def extract_json_object_from_text(text):
+    if text is None:
         raise Exception("Empty LLM response")
 
-    txt = str(response_text).strip()
+    txt = str(text).strip()
 
-    txt = txt.replace("```json", "").replace("```", "").strip()
+    txt = txt.replace("```json", "")
+    txt = txt.replace("```", "")
+    txt = txt.strip()
 
-    # Direct JSON parse first
-    try:
-        return json.loads(txt)
-    except Exception:
-        pass
+    parsed = try_parse_json_or_python(txt)
 
-    # Sometimes the text contains prose before/after JSON.
-    first = txt.find("{")
-    last = txt.rfind("}")
+    if isinstance(parsed, dict):
+        if "choices" in parsed:
+            choices = parsed.get("choices") or []
+            if len(choices) > 0:
+                ch = choices[0]
+                if isinstance(ch, dict):
+                    msg = ch.get("messages") or ch.get("message") or ch.get("content")
+                    if msg:
+                        return extract_json_object_from_text(msg)
 
-    if first >= 0 and last >= 0 and last > first:
-        candidate = txt[first:last + 1]
+        return parsed
 
-        try:
-            return json.loads(candidate)
-        except Exception:
-            pass
+    if isinstance(parsed, list):
+        if len(parsed) > 0:
+            first = parsed[0]
 
-        try:
-            return ast.literal_eval(candidate)
-        except Exception:
-            pass
+            if isinstance(first, dict):
+                if "messages" in first:
+                    return extract_json_object_from_text(first["messages"])
+                if "content" in first:
+                    return extract_json_object_from_text(first["content"])
+                return first
 
-    raise Exception("Could not parse LLM JSON. First 500 chars: " + txt[:500])
+            if isinstance(first, str):
+                return extract_json_object_from_text(first)
+
+    first_brace = txt.find("{")
+    last_brace = txt.rfind("}")
+
+    if first_brace >= 0 and last_brace > first_brace:
+        candidate = txt[first_brace:last_brace + 1]
+
+        parsed_candidate = try_parse_json_or_python(candidate)
+
+        if isinstance(parsed_candidate, dict):
+            return parsed_candidate
+
+        if isinstance(parsed_candidate, list) and len(parsed_candidate) > 0:
+            if isinstance(parsed_candidate[0], dict):
+                return parsed_candidate[0]
+
+    raise Exception("Could not extract JSON object. First 1000 chars: " + txt[:1000])
 
 
 def parse_file_text(session, relative_path):
@@ -172,14 +192,14 @@ def parse_file_text(session, relative_path):
         if parsed is None:
             return ''
 
-        parsed_obj = parse_json_robust(parsed)
+        parsed_obj = try_parse_json_or_python(parsed)
 
         if isinstance(parsed_obj, dict) and parsed_obj.get('error'):
             return f"\\n[PARSE_ERROR for {relative_path}: {parsed_obj.get('error')}]\\n"
 
         value = parsed_obj.get('value') if isinstance(parsed_obj, dict) else parsed
 
-        value_obj = parse_json_robust(value)
+        value_obj = try_parse_json_or_python(value)
 
         if isinstance(value_obj, dict):
             if 'content' in value_obj:
@@ -263,7 +283,14 @@ Date extraction:
 - date_of_last_conversation = latest email date found in the chain.
 - no_of_emails_transferred_in_between = count of distinct emails/messages in the chain. Count visible From/Sent/On date wrote blocks as messages.
 
-Return ONLY valid JSON with this exact structure:
+Return ONLY a single JSON object.
+Do not return markdown.
+Do not return explanation outside JSON.
+Do not wrap the JSON in a list.
+Do not use single quotes.
+All property names must be enclosed in double quotes.
+
+Return exactly this structure:
 
 {{
   "competitor_undercut_significantly_on_price": 0,
@@ -285,31 +312,23 @@ Return ONLY valid JSON with this exact structure:
   "no_of_emails_transferred_in_between": 0
 }}
 
-Important:
-- Return only JSON.
-- Do not return markdown.
-- Do not return ```json.
-- Use 0/1 integer values only.
-- Explanation should be detailed and mention concrete evidence.
-- Dates should be strings in YYYY-MM-DD HH24:MI format if possible.
-- If date cannot be found, use null.
-
 Account folder name:
 {account_folder_name}
 
 Combined conversation text:
-{combined_text[:120000]}
+{combined_text[:100000]}
 """
 
 
 def classify_with_llm(session, account_folder_name, combined_text):
     prompt = build_prompt(account_folder_name, combined_text)
 
+    # Important: no options object here.
+    # This avoids Snowflake wrapper responses like choices/messages.
     q = f"""
         SELECT AI_COMPLETE(
             '{MODEL_NAME}',
-            '{sql_escape(prompt)}',
-            OBJECT_CONSTRUCT('temperature', 0)
+            '{sql_escape(prompt)}'
         ) AS LLM_RESPONSE
     """
 
@@ -319,13 +338,36 @@ def classify_with_llm(session, account_folder_name, combined_text):
     if response is None:
         raise Exception("AI_COMPLETE returned NULL")
 
-    model_message = extract_model_message(response)
-    result = parse_llm_json(model_message)
+    result = extract_json_object_from_text(response)
 
     if not isinstance(result, dict):
-        raise Exception("LLM JSON was not an object")
+        raise Exception("LLM JSON was not an object. Raw response: " + str(response)[:1000])
 
-    return result
+    required_keys = [
+        "competitor_undercut_significantly_on_price",
+        "pricing_inelasticity",
+        "layer_structure_mismatch",
+        "restrictive_sub_limits",
+        "deductible_mismatch",
+        "order_size_participation_deficit",
+        "broker_switch_displacement",
+        "preferred_market_partnerships",
+        "facility_line_slip_displacement",
+        "negotiation_fatigue",
+        "late_quote",
+        "captive_expansion_securitization",
+        "composite_multi_class_bundling",
+        "ntu_explanation",
+        "date_of_first_conversation_started",
+        "date_of_last_conversation",
+        "no_of_emails_transferred_in_between"
+    ]
+
+    for k in required_keys:
+        if k not in result:
+            result[k] = None if k.startswith("date_") else 0
+
+    return result, str(response)
 
 
 def insert_result(session, account_folder_name, result, files_processed):
@@ -392,8 +434,26 @@ def insert_result(session, account_folder_name, result, files_processed):
     session.sql(q).collect()
 
 
+def insert_error(session, account_folder_name, error_message, raw_response, files_processed):
+    q = f"""
+        INSERT INTO {ERROR_TABLE} (
+            ACCOUNT_FOLDER_NAME,
+            ERROR_MESSAGE,
+            RAW_LLM_RESPONSE,
+            FILES_PROCESSED
+        )
+        SELECT
+            '{sql_escape(account_folder_name)}',
+            '{sql_escape(error_message)}',
+            '{sql_escape(str(raw_response)[:10000])}',
+            {files_processed}
+    """
+    session.sql(q).collect()
+
+
 def main(session, LIMIT_N_FOLDERS):
     session.sql(f"TRUNCATE TABLE {OUTPUT_TABLE}").collect()
+    session.sql(f"TRUNCATE TABLE {ERROR_TABLE}").collect()
 
     files_df = session.sql(f"LIST {STAGE_NAME}/{ROOT_PATH}")
     rows = files_df.collect()
@@ -426,9 +486,11 @@ def main(session, LIMIT_N_FOLDERS):
     messages = []
 
     for account_folder in account_folders:
+        raw_response = ''
+        files = account_to_files.get(account_folder, [])
+
         try:
             all_text_parts = []
-            files = account_to_files[account_folder]
 
             for file_path in files:
                 parsed_text = parse_file_text(session, file_path)
@@ -442,10 +504,12 @@ def main(session, LIMIT_N_FOLDERS):
 
             if not combined_text.strip():
                 failed += 1
-                messages.append(f"{account_folder}: no parsed text")
+                msg = "no parsed text"
+                insert_error(session, account_folder, msg, '', len(files))
+                messages.append(f"{account_folder}: FAILED - {msg}")
                 continue
 
-            result = classify_with_llm(session, account_folder, combined_text)
+            result, raw_response = classify_with_llm(session, account_folder, combined_text)
 
             insert_result(session, account_folder, result, len(files))
 
@@ -454,7 +518,8 @@ def main(session, LIMIT_N_FOLDERS):
 
         except Exception as e:
             failed += 1
-            messages.append(f"{account_folder}: FAILED - {str(e)}")
+            insert_error(session, account_folder, str(e), raw_response, len(files))
+            messages.append(f"{account_folder}: FAILED - {str(e)[:200]}")
 
     return f"Processed={processed}, Failed={failed}. Details: " + " | ".join(messages)
 $$;
