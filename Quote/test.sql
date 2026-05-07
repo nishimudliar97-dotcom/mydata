@@ -1,13 +1,11 @@
-LIST @OPEN_MARKET_QUOTE/Open_Market
-PATTERN = '.*[.](pdf|PDF|png|PNG|jpg|JPG|jpeg|JPEG|doc|DOC|docx|DOCX)$';
-
-SET last_list_qid = LAST_QUERY_ID();
-
 SELECT
-    REGEXP_SUBSTR("name", 'Open_Market/([^/]+)/', 1, 1, 'e', 1) AS account_folder,
-    COUNT(*) AS file_count,
-    LISTAGG(SPLIT_PART("name", '/', -1), ', ') AS file_names
-FROM TABLE(RESULT_SCAN($last_list_qid))
-WHERE REGEXP_SUBSTR("name", 'Open_Market/([^/]+)/', 1, 1, 'e', 1) IS NOT NULL
-GROUP BY account_folder
-ORDER BY file_count DESC;
+    SPLIT_PART(RELATIVE_PATH, '/', 2) AS ACCOUNT_FOLDER,
+    COUNT(*) AS FILE_COUNT,
+    LISTAGG(SPLIT_PART(RELATIVE_PATH, '/', -1), ', ') 
+        WITHIN GROUP (ORDER BY RELATIVE_PATH) AS FILE_NAMES
+FROM DIRECTORY(@OPEN_MARKET_QUOTE)
+WHERE RELATIVE_PATH ILIKE 'Open_Market/%'
+  AND REGEXP_LIKE(RELATIVE_PATH, '.*[.](pdf|png|jpg|jpeg|doc|docx)$', 'i')
+  AND ARRAY_SIZE(SPLIT(RELATIVE_PATH, '/')) >= 3
+GROUP BY SPLIT_PART(RELATIVE_PATH, '/', 2)
+ORDER BY FILE_COUNT DESC;
