@@ -1,6 +1,3 @@
-ALTER TABLE OPEN_MARKET_NTU_CLASSIFICATION_V3_OUTPUT
-DROP COLUMN IF EXISTS DATE_OF_LAST_CONVERSATION;
-
 CREATE OR REPLACE PROCEDURE RUN_OPEN_MARKET_NTU_CLASSIFICATION_V3(LIMIT_N_FOLDERS NUMBER)
 RETURNS STRING
 LANGUAGE PYTHON
@@ -241,24 +238,10 @@ def find_first_date_in_text(value):
 
 
 def find_email_message_events(text):
-    """
-    Detect real email-message starts.
-
-    We count messages from:
-    1. From + Sent/Date + Subject blocks
-    2. On <date>, <person> wrote:
-    3. Rendered PDF header blocks, like:
-       Matthew Askew <matthew.askew@convexin.com> ... 31 May 2024 at 15:28
-
-    Important:
-    We later cut each message body at the next message marker.
-    This prevents a Convex message from accidentally inheriting quoted broker history.
-    """
-
     text = normalize_email_text(text)
     raw_events = []
 
-    # 1. Outlook / forwarded style: From + Sent/Date
+    # 1. From / Sent / Subject style
     for m in re.finditer(r"(?im)^\s*From:\s*(.+)$", text):
         pos = m.start()
         sender_line = m.group(1).strip()
@@ -284,7 +267,7 @@ def find_email_message_events(text):
                 "source": "from_header"
             })
 
-    # 2. Gmail "On ... wrote:" style
+    # 2. On <date>, <person> wrote style
     wrote_patterns = [
         r"(?is)\bOn\s+([A-Za-z]{3,9},\s+\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4}\s+at\s+\d{1,2}:\d{2}(?:\s*(?:AM|PM))?),\s*(.{0,350}?)\s+wrote:",
         r"(?is)\bOn\s+([A-Za-z]{3,9},\s+[A-Za-z]{3,9}\s+\d{1,2},\s+\d{4}\s+at\s+\d{1,2}:\d{2}(?:\s*(?:AM|PM))?),\s*(.{0,350}?)\s+wrote:"
@@ -308,21 +291,17 @@ def find_email_message_events(text):
                     "source": "on_wrote"
                 })
 
-    # 3. Rendered top email header style
-    # Example:
-    # Matthew Askew <matthew.askew@convexin.com>      31 May 2024 at 15:28
+    # 3. Rendered PDF header style
     for m in re.finditer(r"(?m)^.*<[^>]+@[^>]+>.*$", text):
         line = m.group(0).strip()
         lower_line = line.lower()
 
-        # Ignore recipient/header/signature/contact lines
         if lower_line.startswith(("to:", "cc:", "bcc:", "from:", "subject:", "e:", "m:", "w:", "in:")):
             continue
 
         pos = m.start()
         window = text[max(0, pos - 500):pos + 1800]
 
-        # It should look like a message header.
         looks_like_header = (
             re.search(r"(?im)^\s*To:\s*", window)
             or re.search(r"(?im)^\s*Subject:\s*", window)
@@ -345,8 +324,7 @@ def find_email_message_events(text):
                 "source": "rendered_header"
             })
 
-    # Deduplicate by sender + datetime.
-    # This prevents the same email being counted twice when both From/Sent and On...wrote appear.
+    # Deduplicate by sender email + timestamp
     dedup = {}
 
     for e in raw_events:
@@ -373,17 +351,14 @@ def find_email_message_events(text):
     events = list(dedup.values())
     events.sort(key=lambda x: x["pos"])
 
-    # Build clean message bodies.
-    # Stop at the next detected email start marker.
+    # Create clean body for each message.
+    # This prevents Convex quote detection from accidentally reading quoted broker history.
     for i, e in enumerate(events):
         start = e["pos"]
         end = events[i + 1]["pos"] if i + 1 < len(events) else len(text)
 
         body = text[start:end]
 
-        # Extra safety:
-        # If the body still contains a nested "On ... wrote:" or "From:" after the header,
-        # cut it so quote detection only sees this email's own text.
         cut_patterns = [
             r"(?is)\n\s*On\s+[A-Za-z]{3,9},\s+\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4}\s+at\s+\d{1,2}:\d{2}.*?\bwrote:",
             r"(?is)\n\s*On\s+[A-Za-z]{3,9},\s+[A-Za-z]{3,9}\s+\d{1,2},\s+\d{4}\s+at\s+\d{1,2}:\d{2}.*?\bwrote:",
@@ -394,10 +369,9 @@ def find_email_message_events(text):
 
         for cp in cut_patterns:
             cm = re.search(cp, body)
-            if cm:
-                if cm.start() > 50:
-                    if earliest_cut is None or cm.start() < earliest_cut:
-                        earliest_cut = cm.start()
+            if cm and cm.start() > 50:
+                if earliest_cut is None or cm.start() < earliest_cut:
+                    earliest_cut = cm.start()
 
         if earliest_cut is not None:
             body = body[:earliest_cut]
@@ -408,12 +382,6 @@ def find_email_message_events(text):
 
 
 def has_convex_quote_language(body):
-    """
-    Actual quote/terms language.
-    This is evaluated only on the current Convex email body,
-    not on nested quoted broker history.
-    """
-
     w = (body or "").lower()
 
     strong_quote_phrases = [
@@ -468,13 +436,6 @@ def has_convex_quote_language(body):
 
 
 def extract_conversation_metadata(combined_text):
-    """
-    Business meaning:
-    - First conversation started = earliest distinct email/message date.
-    - First Convex quote sent = earliest distinct Convex email where Convex actually gives quote/offer/terms.
-    - Email count = count of distinct email messages detected from real message-start markers.
-    """
-
     text = normalize_email_text(combined_text)
     events = find_email_message_events(text)
 
@@ -497,7 +458,6 @@ def extract_conversation_metadata(combined_text):
 
     email_count = len(events)
 
-    # Fallback only if no message events are found at all.
     if email_count == 0:
         fallback_dates = []
 
@@ -517,11 +477,29 @@ def extract_conversation_metadata(combined_text):
 
     days_to_quote = safe_date_diff_days(first_dt, first_quote_dt)
 
-    # Current thresholds requested:
-    # Late Quote = 1 only if first Convex quote is more than 4 days after first conversation.
-    # Negotiation Fatigue = 1 only if email count is more than 20.
     late_quote = 1 if days_to_quote is not None and days_to_quote > 4 else 0
     negotiation_fatigue = 1 if email_count > 20 else 0
+
+    # Keep metadata smaller to avoid JSON/string insert failures.
+    messages_detected = []
+    for e in events:
+        messages_detected.append({
+            "sender": e.get("sender"),
+            "sender_email": e.get("sender_email"),
+            "date": e["dt"].strftime("%Y-%m-%d %H:%M"),
+            "source": e.get("source"),
+            "is_convex": 1 if "@convexin.com" in (e.get("sender_email") or "").lower() else 0,
+            "is_convex_quote": 1 if "@convexin.com" in (e.get("sender_email") or "").lower() and has_convex_quote_language(e.get("body") or "") else 0
+        })
+
+    quote_candidates_debug = []
+    for e in quote_candidates:
+        quote_candidates_debug.append({
+            "sender": e.get("sender"),
+            "sender_email": e.get("sender_email"),
+            "date": e["dt"].strftime("%Y-%m-%d %H:%M"),
+            "source": e.get("source")
+        })
 
     return {
         "first_conversation_dt": first_dt,
@@ -530,35 +508,12 @@ def extract_conversation_metadata(combined_text):
         "days_to_quote": days_to_quote,
         "late_quote": late_quote,
         "negotiation_fatigue": negotiation_fatigue,
-
-        "messages_detected": [
-            {
-                "sender": e.get("sender"),
-                "sender_email": e.get("sender_email"),
-                "date": e["dt"].strftime("%Y-%m-%d %H:%M"),
-                "source": e.get("source"),
-                "is_convex": 1 if "@convexin.com" in (e.get("sender_email") or "").lower() else 0,
-                "is_convex_quote": 1 if "@convexin.com" in (e.get("sender_email") or "").lower() and has_convex_quote_language(e.get("body") or "") else 0,
-                "body_preview": (e.get("body") or "")[:700]
-            }
-            for e in events
-        ],
-
+        "messages_detected": messages_detected,
         "all_dates_detected": [
             e["dt"].strftime("%Y-%m-%d %H:%M")
             for e in events
         ],
-
-        "quote_candidates": [
-            {
-                "sender": e.get("sender"),
-                "sender_email": e.get("sender_email"),
-                "date": e["dt"].strftime("%Y-%m-%d %H:%M"),
-                "source": e.get("source"),
-                "body_preview": (e.get("body") or "")[:700]
-            }
-            for e in quote_candidates
-        ]
+        "quote_candidates": quote_candidates_debug
     }
 
 
@@ -907,7 +862,7 @@ def classify_with_llm(session, account_folder_name, combined_text):
         "first_conversation_started": result["date_of_first_conversation_started"],
         "first_convex_quote_sent": result["date_of_first_convex_quote_sent"],
         "email_count_detected": metadata["email_count"],
-        "days_to_first_quote": metadata["days_to_first_quote"] if "days_to_first_quote" in metadata else metadata["days_to_quote"],
+        "days_to_first_quote": metadata["days_to_quote"],
         "late_quote_rule": "1 if days_to_first_quote > 4 else 0",
         "negotiation_fatigue_rule": "1 if email_count_detected > 20 else 0",
         "all_dates_detected": metadata["all_dates_detected"],
@@ -920,8 +875,11 @@ def classify_with_llm(session, account_folder_name, combined_text):
 
 
 def insert_result(session, account_folder_name, result, files_processed, raw_response, system_metadata):
-    raw_json = sql_escape(json.dumps(result))
-    metadata_json = sql_escape(json.dumps(system_metadata))
+    # IMPORTANT FIX:
+    # Store raw JSON/debug metadata as VARIANT string, not PARSE_JSON(...).
+    # This avoids Snowflake JSON parsing failures from long quoted email text or special characters.
+    raw_json_text = sql_escape(json.dumps(result, ensure_ascii=False))
+    metadata_json_text = sql_escape(json.dumps(system_metadata, ensure_ascii=False))
 
     first_date = result.get('date_of_first_conversation_started')
     quote_date = result.get('date_of_first_convex_quote_sent')
@@ -983,8 +941,8 @@ def insert_result(session, account_folder_name, result, files_processed, raw_res
             { 'NULL' if result.get('days_to_first_quote') is None else safe_int(result.get('days_to_first_quote')) },
 
             {files_processed},
-            PARSE_JSON('{raw_json}'),
-            PARSE_JSON('{metadata_json}')
+            TO_VARIANT('{raw_json_text}'),
+            TO_VARIANT('{metadata_json_text}')
     """
 
     session.sql(q).collect()
@@ -1075,7 +1033,7 @@ def main(session, LIMIT_N_FOLDERS):
         except Exception as e:
             failed += 1
             insert_error(session, account_folder, str(e), raw_response, len(files))
-            messages.append(f"{account_folder}: FAILED - {str(e)[:200]}")
+            messages.append(f"{account_folder}: FAILED - {str(e)[:250]}")
 
     return f"Processed={processed}, Failed={failed}. Details: " + " | ".join(messages)
 $$;
