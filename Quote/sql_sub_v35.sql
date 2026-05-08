@@ -595,10 +595,15 @@ def derive_supporting_rule_flags(combined_text):
         "tower",
         "placement tower",
         "programme structure",
-        "program structure"
+        "program structure",
+        "layer 1",
+        "layer 2",
+        "layer 3",
+        "line on layer",
+        "line on the layer"
     ])
 
-    layer_problem_present = any(x in text for x in [
+    layer_structural_issue_present = any(x in text for x in [
         "not able to support",
         "unable to support",
         "cannot support",
@@ -633,7 +638,40 @@ def derive_supporting_rule_flags(combined_text):
         "cannot follow on this layer"
     ])
 
-    if layer_terms_present and layer_problem_present:
+    layer_conditional_offer_present = any(x in text for x in [
+        "condition to sign",
+        "condition to bind",
+        "subject to sign",
+        "subject to bind",
+        "subject to order",
+        "subject to minimum",
+        "minimum signed",
+        "sign no less",
+        "signing no less",
+        "no less than",
+        "minimum line",
+        "minimum participation",
+        "conditional line",
+        "conditional offer",
+        "offered a 7.5% line on layer",
+        "offer a 7.5% line on layer",
+        "offered a 5% line on layer",
+        "offer a 5% line on layer",
+        "line on layer 2",
+        "line on layer 1",
+        "line on layer 3"
+    ])
+
+    layer_specific_capacity_present = (
+        re.search(r"\b\d+(\.\d+)?\s*%\s+(line|share|capacity|participation)\b", text) is not None
+        and any(x in text for x in ["layer", "xs", "x/s", "excess", "primary", "attachment"])
+    )
+
+    if layer_terms_present and (
+        layer_structural_issue_present
+        or layer_conditional_offer_present
+        or layer_specific_capacity_present
+    ):
         flags["layer_structure_mismatch"] = 1
 
     if any(x in text for x in [
@@ -761,21 +799,21 @@ Mark 1 only when the chain indicates a competing insurer, market, or lead offere
 Mark 1 when Convex appears unable or unwilling to meet target pricing due to technical rating or pricing discipline.
 
 3. LAYER_STRUCTURE_MISMATCH:
-Act like a highly experienced insurance placement specialist. Understand the insurance tower, layering, attachment points, primary layer, excess layer, quota share, vertical placement, and participation structure.
+Act like a highly experienced insurance placement specialist. Understand the insurance tower, layering, attachment points, primary layer, excess layer, quota share, vertical placement, signed line, written line, capacity, participation structure, order, and minimum signing condition.
 
-Mark 1 only when the discussion suggests that the way the insurance placement was structured, layered, attached, or ordered was a likely reason Convex could not win/bind the risk.
+Mark 1 when the discussion suggests that Convex's ability to participate depended on the placement layer, line size, signing condition, attachment, quota share, excess/primary position, or tower structure.
 
-Do not mark 1 just because words like layer, excess, primary, xs, quota share, attachment, or structure appear. These are common words in property insurance.
+This category should be 1 when there is evidence such as:
+- Convex offered a specific percentage line on a named layer, for example 5%, 7.5%, 10% line on Layer 1 / Layer 2 / excess layer / quota share layer
+- Convex's offer was conditional on signing a minimum percentage, minimum order, minimum participation, or “no less than” condition
+- Convex was asked to participate on a specific layer, tower position, attachment point, primary/excess layer, quota share, or vertical structure
+- the broker was trying to fill a specific layer/order and Convex's available line or terms did not naturally fit the requested structure
+- Convex could only follow a lead or participate with a specific structure/condition
+- there is a discussion around primary vs excess, layers further up, attachment point, quota share stretch, or layer placement that appears relevant to why the account was not bound
+- Convex offered on Layer 2 or another named layer with a signing/order condition
+- the broker requested a certain placement structure and Convex’s terms were structured differently or conditionally
 
-Mark 1 when the email suggests a real structural/layering issue such as:
-- broker/client wanted Convex on a particular layer but Convex appetite was for a different position in the tower
-- the requested attachment point, excess layer, primary position, quota share, or vertical participation did not match Convex appetite
-- Convex could only offer/follow on a different layer or with a different structure
-- Convex was asked to support a stretch, higher/lower layer, or quota share position that did not fit
-- the broker was trying to fill a specific layer/order and Convex could not support that placement structure
-- the quote/offer was conditional on a structure that was not aligned with the broker’s requested placement
-
-Use 0 when the email only describes the placement layer or gives normal quote terms without showing that the structure itself contributed to NTU.
+Do not mark 1 merely because the email contains generic insurance words like layer, xs, excess, primary, or attachment. Mark 1 only when those terms are connected to Convex's actual participation, offer, condition, order, or placement outcome.
 
 4. RESTRICTIVE_SUB_LIMITS:
 Mark 1 when Convex terms have restrictive sublimits or cover restrictions on key perils such as Flood, Wind, Earthquake, NatCat, BI, CBI, NWS, or similar.
@@ -815,7 +853,7 @@ DECISION RULES:
 - Do not explain LATE_QUOTE.
 - Do not explain NEGOTIATION_FATIGUE.
 - Do not mention dates, timing, email count, delays, or conversation duration inside NTU_EXPLANATION.
-- Be careful with LAYER_STRUCTURE_MISMATCH: only mark it if layering/structure appears to be a likely contributor to the NTU, not merely because insurance layers are mentioned.
+- Be careful with LAYER_STRUCTURE_MISMATCH: mark it when layering/structure is connected to Convex's offer, signing condition, order, capacity, participation, or placement outcome.
 
 Return output in EXACTLY this format.
 Do not return JSON.
@@ -908,6 +946,7 @@ def classify_with_llm(session, account_folder_name, combined_text):
 
     strong_override_keys = [
         "competitor_undercut_significantly_on_price",
+        "layer_structure_mismatch",
         "order_size_participation_deficit",
         "preferred_market_partnerships",
         "facility_line_slip_displacement",
@@ -928,10 +967,6 @@ def classify_with_llm(session, account_folder_name, combined_text):
     ]):
         result["pricing_inelasticity"] = 1
 
-    if rule_flags.get("layer_structure_mismatch", 0) == 1:
-        if safe_int(result.get("layer_structure_mismatch")) == 1:
-            result["layer_structure_mismatch"] = 1
-
     if rule_flags.get("deductible_mismatch", 0) == 1 and any(x in text_lower for x in [
         "deductible too high", "deductible is too high", "cannot accept deductible",
         "deductible mismatch", "higher deductible"
@@ -951,10 +986,10 @@ def classify_with_llm(session, account_folder_name, combined_text):
             result["pricing_inelasticity"] = 1
         elif rule_flags.get("order_size_participation_deficit", 0) == 1:
             result["order_size_participation_deficit"] = 1
-        elif rule_flags.get("preferred_market_partnerships", 0) == 1:
-            result["preferred_market_partnerships"] = 1
         elif rule_flags.get("layer_structure_mismatch", 0) == 1:
             result["layer_structure_mismatch"] = 1
+        elif rule_flags.get("preferred_market_partnerships", 0) == 1:
+            result["preferred_market_partnerships"] = 1
         else:
             result["preferred_market_partnerships"] = 1
 
@@ -1003,7 +1038,7 @@ def classify_with_llm(session, account_folder_name, combined_text):
         "raw_email_count_detected_before_adjustment": metadata["raw_email_count_detected_before_adjustment"],
         "email_count_adjustment_applied": metadata["email_count_adjustment_applied"],
         "email_count_detected_after_adjustment": metadata["email_count"],
-        "days_to_first_quote": metadata["days_to_quote"],
+        "days_to_first_quote": metadata["days_to_first_quote"] if "days_to_first_quote" in metadata else metadata["days_to_quote"],
         "late_quote_rule": "1 if days_to_first_quote > 4 else 0",
         "negotiation_fatigue_rule": "1 if adjusted email_count_detected > 20 else 0",
         "all_dates_detected": metadata["all_dates_detected"],
