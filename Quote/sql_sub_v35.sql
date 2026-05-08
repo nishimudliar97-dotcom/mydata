@@ -60,10 +60,13 @@ def is_supported_file(path):
 def get_account_folder(relative_path):
     if not relative_path.startswith(ROOT_PATH):
         return None
+
     remaining = relative_path[len(ROOT_PATH):]
     parts = remaining.split('/')
+
     if len(parts) < 2:
         return None
+
     return parts[0]
 
 
@@ -93,6 +96,7 @@ def parse_file_text(session, relative_path):
                 TRUE
             ) AS PARSED_DOC
         """
+
         row = session.sql(q).collect()[0]
         parsed = row['PARSED_DOC']
 
@@ -222,7 +226,6 @@ def find_email_message_events(text):
     text = normalize_email_text(text)
     raw_events = []
 
-    # 1. From / Sent / Date / Subject style blocks
     for m in re.finditer(r"(?im)^\s*From:\s*(.+)$", text):
         pos = m.start()
         sender_line = m.group(1).strip()
@@ -248,7 +251,6 @@ def find_email_message_events(text):
                 "source": "from_header"
             })
 
-    # 2. On <date>, <person> wrote:
     wrote_patterns = [
         r"(?is)\bOn\s+([A-Za-z]{3,9},\s+\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4}\s+at\s+\d{1,2}:\d{2}(?:\s*(?:AM|PM))?),\s*(.{0,350}?)\s+wrote:",
         r"(?is)\bOn\s+([A-Za-z]{3,9},\s+[A-Za-z]{3,9}\s+\d{1,2},\s+\d{4}\s+at\s+\d{1,2}:\d{2}(?:\s*(?:AM|PM))?),\s*(.{0,350}?)\s+wrote:"
@@ -272,7 +274,6 @@ def find_email_message_events(text):
                     "source": "on_wrote"
                 })
 
-    # 3. Rendered PDF header style
     for m in re.finditer(r"(?m)^.*<[^>]+@[^>]+>.*$", text):
         line = m.group(0).strip()
         lower_line = line.lower()
@@ -305,7 +306,6 @@ def find_email_message_events(text):
                 "source": "rendered_header"
             })
 
-    # Deduplicate same email found from different markers
     dedup = {}
 
     for e in raw_events:
@@ -579,11 +579,61 @@ def derive_supporting_rule_flags(combined_text):
     ]):
         flags["pricing_inelasticity"] = 1
 
-    if any(x in text for x in [
-        "quota share", "layered structure", "layered", "primary or excess",
-        "primary", "excess", "attachment", "attach", " xs ", " x/s ",
-        "layer", "layers further up", "vertical", "structure", "layer 2"
-    ]):
+    layer_terms_present = any(x in text for x in [
+        "quota share",
+        "primary",
+        "excess",
+        "attachment",
+        "attach",
+        " xs ",
+        " x/s ",
+        "x/s",
+        "layer",
+        "layered",
+        "vertical",
+        "participation layer",
+        "tower",
+        "placement tower",
+        "programme structure",
+        "program structure"
+    ])
+
+    layer_problem_present = any(x in text for x in [
+        "not able to support",
+        "unable to support",
+        "cannot support",
+        "can't support",
+        "not comfortable",
+        "not our appetite",
+        "outside appetite",
+        "not keen",
+        "not interested",
+        "not for us",
+        "would prefer",
+        "only interested in",
+        "instead of",
+        "rather than",
+        "different structure",
+        "structure does not work",
+        "structure doesn't work",
+        "not aligned",
+        "cannot write this layer",
+        "can't write this layer",
+        "too low down",
+        "too high up",
+        "attachment too low",
+        "attachment too high",
+        "we cannot participate on this basis",
+        "we would need a different attachment",
+        "we would need a different layer",
+        "we would need different structure",
+        "not able to offer on that layer",
+        "cannot offer on that layer",
+        "not able to follow on this layer",
+        "cannot follow on this layer"
+    ])
+
+    if layer_terms_present and layer_problem_present:
         flags["layer_structure_mismatch"] = 1
 
     if any(x in text for x in [
@@ -705,13 +755,27 @@ COMPOSITE_MULTI_CLASS_BUNDLING_HINT: {rule_flags["composite_multi_class_bundling
 SUBCATEGORY DEFINITIONS:
 
 1. COMPETITOR_UNDERCUT_SIGNIFICANTLY_ON_PRICE:
-Mark 1 only when the chain indicates a competing insurer / market / lead offered materially better pricing, a lower premium, better rate, or the broker/client was comparing Convex unfavourably against market pricing.
+Mark 1 only when the chain indicates a competing insurer, market, or lead offered materially better pricing, a lower premium, better rate, or the broker/client was comparing Convex unfavourably against market pricing.
 
 2. PRICING_INELASTICITY:
 Mark 1 when Convex appears unable or unwilling to meet target pricing due to technical rating or pricing discipline.
 
 3. LAYER_STRUCTURE_MISMATCH:
-Mark 1 when the issue is structure: quota share vs excess, primary vs excess, attachment point, vertical placement, layer size, or broker wanting one layer while Convex proposes another.
+Act like a highly experienced insurance placement specialist. Understand the insurance tower, layering, attachment points, primary layer, excess layer, quota share, vertical placement, and participation structure.
+
+Mark 1 only when the discussion suggests that the way the insurance placement was structured, layered, attached, or ordered was a likely reason Convex could not win/bind the risk.
+
+Do not mark 1 just because words like layer, excess, primary, xs, quota share, attachment, or structure appear. These are common words in property insurance.
+
+Mark 1 when the email suggests a real structural/layering issue such as:
+- broker/client wanted Convex on a particular layer but Convex appetite was for a different position in the tower
+- the requested attachment point, excess layer, primary position, quota share, or vertical participation did not match Convex appetite
+- Convex could only offer/follow on a different layer or with a different structure
+- Convex was asked to support a stretch, higher/lower layer, or quota share position that did not fit
+- the broker was trying to fill a specific layer/order and Convex could not support that placement structure
+- the quote/offer was conditional on a structure that was not aligned with the broker’s requested placement
+
+Use 0 when the email only describes the placement layer or gives normal quote terms without showing that the structure itself contributed to NTU.
 
 4. RESTRICTIVE_SUB_LIMITS:
 Mark 1 when Convex terms have restrictive sublimits or cover restrictions on key perils such as Flood, Wind, Earthquake, NatCat, BI, CBI, NWS, or similar.
@@ -751,6 +815,7 @@ DECISION RULES:
 - Do not explain LATE_QUOTE.
 - Do not explain NEGOTIATION_FATIGUE.
 - Do not mention dates, timing, email count, delays, or conversation duration inside NTU_EXPLANATION.
+- Be careful with LAYER_STRUCTURE_MISMATCH: only mark it if layering/structure appears to be a likely contributor to the NTU, not merely because insurance layers are mentioned.
 
 Return output in EXACTLY this format.
 Do not return JSON.
@@ -843,7 +908,6 @@ def classify_with_llm(session, account_folder_name, combined_text):
 
     strong_override_keys = [
         "competitor_undercut_significantly_on_price",
-        "layer_structure_mismatch",
         "order_size_participation_deficit",
         "preferred_market_partnerships",
         "facility_line_slip_displacement",
@@ -864,6 +928,10 @@ def classify_with_llm(session, account_folder_name, combined_text):
     ]):
         result["pricing_inelasticity"] = 1
 
+    if rule_flags.get("layer_structure_mismatch", 0) == 1:
+        if safe_int(result.get("layer_structure_mismatch")) == 1:
+            result["layer_structure_mismatch"] = 1
+
     if rule_flags.get("deductible_mismatch", 0) == 1 and any(x in text_lower for x in [
         "deductible too high", "deductible is too high", "cannot accept deductible",
         "deductible mismatch", "higher deductible"
@@ -876,24 +944,20 @@ def classify_with_llm(session, account_folder_name, combined_text):
     ]):
         result["restrictive_sub_limits"] = 1
 
-    # If the model selected no commercial flags, select best-fit commercial flag.
-    # This prevents explanation being driven only by late quote / negotiation fatigue.
     if sum([safe_int(result.get(k)) for k in commercial_flag_keys]) == 0:
         if rule_flags.get("competitor_undercut_significantly_on_price", 0) == 1:
             result["competitor_undercut_significantly_on_price"] = 1
-        elif rule_flags.get("layer_structure_mismatch", 0) == 1:
-            result["layer_structure_mismatch"] = 1
+        elif rule_flags.get("pricing_inelasticity", 0) == 1:
+            result["pricing_inelasticity"] = 1
         elif rule_flags.get("order_size_participation_deficit", 0) == 1:
             result["order_size_participation_deficit"] = 1
         elif rule_flags.get("preferred_market_partnerships", 0) == 1:
             result["preferred_market_partnerships"] = 1
-        elif rule_flags.get("pricing_inelasticity", 0) == 1:
-            result["pricing_inelasticity"] = 1
+        elif rule_flags.get("layer_structure_mismatch", 0) == 1:
+            result["layer_structure_mismatch"] = 1
         else:
             result["preferred_market_partnerships"] = 1
 
-    # Clean explanation:
-    # Remove any line that discusses late quote, negotiation fatigue, timing, dates, delay, email count.
     explanation = result.get("ntu_explanation") or ""
 
     banned_patterns = [
