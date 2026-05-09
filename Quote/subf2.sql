@@ -110,7 +110,7 @@ def parse_file_text(session, relative_path):
             parsed_obj = parsed
 
         if isinstance(parsed_obj, dict) and parsed_obj.get('error'):
-            return f"\n[PARSE_ERROR for {relative_path}: {parsed_obj.get('error')}]\n"
+            return f"\\n[PARSE_ERROR for {relative_path}: {parsed_obj.get('error')}]\\n"
 
         value = parsed_obj.get('value') if isinstance(parsed_obj, dict) else parsed_obj
 
@@ -124,7 +124,7 @@ def parse_file_text(session, relative_path):
                 return value_obj.get('content') or ''
 
             if 'pages' in value_obj:
-                return '\n\n'.join([
+                return '\\n\\n'.join([
                     p.get('content', '')
                     for p in value_obj.get('pages', [])
                     if isinstance(p, dict)
@@ -133,26 +133,26 @@ def parse_file_text(session, relative_path):
         return str(value)
 
     except Exception as e:
-        return f"\n[PARSE_EXCEPTION for {relative_path}: {str(e)}]\n"
+        return f"\\n[PARSE_EXCEPTION for {relative_path}: {str(e)}]\\n"
 
 
 def normalize_email_text(text):
     text = text or ""
-    text = text.replace("\r", "\n")
-    text = text.replace("\u00a0", " ")
-    text = re.sub(r"[ \t]+", " ", text)
-    text = re.sub(r"\n{3,}", "\n\n", text)
+    text = text.replace("\\r", "\\n")
+    text = text.replace("\\u00a0", " ")
+    text = re.sub(r"[ \\t]+", " ", text)
+    text = re.sub(r"\\n{3,}", "\\n\\n", text)
     return text
 
 
 def parse_date_candidate(raw):
     raw = raw or ""
     raw = raw.strip()
-    raw = re.sub(r"\s+", " ", raw)
+    raw = re.sub(r"\\s+", " ", raw)
     raw = raw.replace(" at ", " ")
     raw = raw.replace(",", ", ")
-    raw = re.sub(r"\s+", " ", raw).strip()
-    raw = re.sub(r"(\d{1,2})(st|nd|rd|th)", r"\1", raw, flags=re.IGNORECASE)
+    raw = re.sub(r"\\s+", " ", raw).strip()
+    raw = re.sub(r"(\\d{1,2})(st|nd|rd|th)", r"\\1", raw, flags=re.IGNORECASE)
 
     formats = [
         "%A, %B %d, %Y %I:%M %p",
@@ -192,7 +192,7 @@ def get_email_from_text(value):
     if m:
         return m.group(1).strip().lower()
 
-    m = re.search(r"([A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,})", value)
+    m = re.search(r"([A-Za-z0-9._%+\\-]+@[A-Za-z0-9.\\-]+\\.[A-Za-z]{2,})", value)
     if m:
         return m.group(1).strip().lower()
 
@@ -203,14 +203,14 @@ def find_first_date_in_text(value):
     value = value or ""
 
     date_patterns = [
-        r"([A-Za-z]{3,9},\s+\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4}\s+at\s+\d{1,2}:\d{2}(?:\s*(?:AM|PM))?)",
-        r"([A-Za-z]{3,9},\s+[A-Za-z]{3,9}\s+\d{1,2},\s+\d{4}\s+at\s+\d{1,2}:\d{2}(?:\s*(?:AM|PM))?)",
-        r"(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4}\s+at\s+\d{1,2}:\d{2})",
-        r"([A-Za-z]{3,9}\s+\d{1,2},\s+\d{4}\s+\d{1,2}:\d{2}\s*(?:AM|PM))",
-        r"(\d{1,2}/\d{1,2}/\d{4},\s*\d{1,2}:\d{2})",
-        r"(\d{1,2}/\d{1,2}/\d{4}\s+\d{1,2}:\d{2})",
-        r"(\d{4}-\d{2}-\d{2}\s+\d{1,2}:\d{2})",
-        r"(\d{4}-\d{2}-\d{2})"
+        r"([A-Za-z]{3,9},\\s+\\d{1,2}\\s+[A-Za-z]{3,9}\\s+\\d{4}\\s+at\\s+\\d{1,2}:\\d{2}(?:\\s*(?:AM|PM))?)",
+        r"([A-Za-z]{3,9},\\s+[A-Za-z]{3,9}\\s+\\d{1,2},\\s+\\d{4}\\s+at\\s+\\d{1,2}:\\d{2}(?:\\s*(?:AM|PM))?)",
+        r"(\\d{1,2}\\s+[A-Za-z]{3,9}\\s+\\d{4}\\s+at\\s+\\d{1,2}:\\d{2})",
+        r"([A-Za-z]{3,9}\\s+\\d{1,2},\\s+\\d{4}\\s+\\d{1,2}:\\d{2}\\s*(?:AM|PM))",
+        r"(\\d{1,2}/\\d{1,2}/\\d{4},\\s*\\d{1,2}:\\d{2})",
+        r"(\\d{1,2}/\\d{1,2}/\\d{4}\\s+\\d{1,2}:\\d{2})",
+        r"(\\d{4}-\\d{2}-\\d{2}\\s+\\d{1,2}:\\d{2})",
+        r"(\\d{4}-\\d{2}-\\d{2})"
     ]
 
     for pattern in date_patterns:
@@ -227,12 +227,12 @@ def find_email_message_events(text):
     text = normalize_email_text(text)
     raw_events = []
 
-    for m in re.finditer(r"(?im)^\s*From:\s*(.+)$", text):
+    for m in re.finditer(r"(?im)^\\s*From:\\s*(.+)$", text):
         pos = m.start()
         sender_line = m.group(1).strip()
         window = text[pos:pos + 1800]
 
-        date_match = re.search(r"(?im)^\s*(?:Sent|Date):\s*(.+)$", window)
+        date_match = re.search(r"(?im)^\\s*(?:Sent|Date):\\s*(.+)$", window)
         dt = None
 
         if date_match:
@@ -253,8 +253,8 @@ def find_email_message_events(text):
             })
 
     wrote_patterns = [
-        r"(?is)\bOn\s+([A-Za-z]{3,9},\s+\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4}\s+at\s+\d{1,2}:\d{2}(?:\s*(?:AM|PM))?),\s*(.{0,350}?)\s+wrote:",
-        r"(?is)\bOn\s+([A-Za-z]{3,9},\s+[A-Za-z]{3,9}\s+\d{1,2},\s+\d{4}\s+at\s+\d{1,2}:\d{2}(?:\s*(?:AM|PM))?),\s*(.{0,350}?)\s+wrote:"
+        r"(?is)\\bOn\\s+([A-Za-z]{3,9},\\s+\\d{1,2}\\s+[A-Za-z]{3,9}\\s+\\d{4}\\s+at\\s+\\d{1,2}:\\d{2}(?:\\s*(?:AM|PM))?),\\s*(.{0,350}?)\\s+wrote:",
+        r"(?is)\\bOn\\s+([A-Za-z]{3,9},\\s+[A-Za-z]{3,9}\\s+\\d{1,2},\\s+\\d{4}\\s+at\\s+\\d{1,2}:\\d{2}(?:\\s*(?:AM|PM))?),\\s*(.{0,350}?)\\s+wrote:"
     ]
 
     for wrote_pattern in wrote_patterns:
@@ -286,10 +286,10 @@ def find_email_message_events(text):
         window = text[max(0, pos - 500):pos + 1800]
 
         looks_like_header = (
-            re.search(r"(?im)^\s*To:\s*", window)
-            or re.search(r"(?im)^\s*Subject:\s*", window)
-            or re.search(r"(?im)^\s*Cc:\s*", window)
-            or re.search(r"(?i)\b\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4}\s+at\s+\d{1,2}:\d{2}", window)
+            re.search(r"(?im)^\\s*To:\\s*", window)
+            or re.search(r"(?im)^\\s*Subject:\\s*", window)
+            or re.search(r"(?im)^\\s*Cc:\\s*", window)
+            or re.search(r"(?i)\\b\\d{1,2}\\s+[A-Za-z]{3,9}\\s+\\d{4}\\s+at\\s+\\d{1,2}:\\d{2}", window)
         )
 
         if not looks_like_header:
@@ -340,9 +340,9 @@ def find_email_message_events(text):
         body = text[start:end]
 
         cut_patterns = [
-            r"(?is)\n\s*On\s+[A-Za-z]{3,9},\s+\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4}\s+at\s+\d{1,2}:\d{2}.*?\bwrote:",
-            r"(?is)\n\s*On\s+[A-Za-z]{3,9},\s+[A-Za-z]{3,9}\s+\d{1,2},\s+\d{4}\s+at\s+\d{1,2}:\d{2}.*?\bwrote:",
-            r"(?im)\n\s*From:\s+.+\n\s*Sent:\s+.+"
+            r"(?is)\\n\\s*On\\s+[A-Za-z]{3,9},\\s+\\d{1,2}\\s+[A-Za-z]{3,9}\\s+\\d{4}\\s+at\\s+\\d{1,2}:\\d{2}.*?\\bwrote:",
+            r"(?is)\\n\\s*On\\s+[A-Za-z]{3,9},\\s+[A-Za-z]{3,9}\\s+\\d{1,2},\\s+\\d{4}\\s+at\\s+\\d{1,2}:\\d{2}.*?\\bwrote:",
+            r"(?im)\\n\\s*From:\\s+.+\\n\\s*Sent:\\s+.+"
         ]
 
         earliest_cut = None
@@ -363,7 +363,7 @@ def find_email_message_events(text):
 
 def has_convex_quote_language(body):
     w = (body or "").lower()
-    w = re.sub(r"\s+", " ", w).strip()
+    w = re.sub(r"\\s+", " ", w).strip()
 
     non_quote_phrases = [
         "we will take a look",
@@ -441,7 +441,7 @@ def has_convex_quote_language(body):
     if any(p in w for p in strong_quote_phrases):
         return True
 
-    has_line = re.search(r"\b\d+(\.\d+)?\s*%\s+(line|share)\b", w) is not None
+    has_line = re.search(r"\\b\\d+(\\.\\d+)?\\s*%\\s+(line|share)\\b", w) is not None
 
     has_layer_or_price = any(x in w for x in [
         " xs ",
@@ -494,7 +494,7 @@ def extract_conversation_metadata(combined_text):
         fallback_dates = []
 
         for m in re.finditer(
-            r"(?i)(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4}\s+at\s+\d{1,2}:\d{2}|\d{1,2}/\d{1,2}/\d{4},\s*\d{1,2}:\d{2})",
+            r"(?i)(\\d{1,2}\\s+[A-Za-z]{3,9}\\s+\\d{4}\\s+at\\s+\\d{1,2}:\\d{2}|\\d{1,2}/\\d{1,2}/\\d{4},\\s*\\d{1,2}:\\d{2})",
             text
         ):
             dt = parse_date_candidate(m.group(1))
@@ -511,7 +511,10 @@ def extract_conversation_metadata(combined_text):
     days_to_quote = safe_date_diff_days(first_dt, first_quote_dt)
 
     late_quote = 1 if days_to_quote is not None and days_to_quote > 4 else 0
-    negotiation_fatigue = 1 if email_count > 20 else 0
+
+    # Negotiation fatigue is no longer email-count based.
+    # It is now detected from text evidence inside derive_supporting_rule_flags().
+    negotiation_fatigue = 0
 
     messages_detected = []
     for e in events:
@@ -557,7 +560,7 @@ def extract_conversation_metadata(combined_text):
 
 def derive_supporting_rule_flags(combined_text):
     text = (combined_text or "").lower()
-    compact = re.sub(r"\s+", " ", text)
+    compact = re.sub(r"\\s+", " ", text)
 
     flags = {
         "competitor_undercut_significantly_on_price": 0,
@@ -569,6 +572,7 @@ def derive_supporting_rule_flags(combined_text):
         "broker_switch_displacement": 0,
         "preferred_market_partnerships": 0,
         "facility_line_slip_displacement": 0,
+        "negotiation_fatigue": 0,
         "captive_expansion_securitization": 0,
         "composite_multi_class_bundling": 0
     }
@@ -657,7 +661,7 @@ def derive_supporting_rule_flags(combined_text):
     ])
 
     layer_specific_capacity_present = (
-        re.search(r"\b\d+(\.\d+)?\s*%\s+(line|share|capacity|participation)\b", compact) is not None
+        re.search(r"\\b\\d+(\\.\\d+)?\\s*%\\s+(line|share|capacity|participation)\\b", compact) is not None
         and any(x in compact for x in [
             "layer", "xs", "x/s", "excess", "primary", "attachment", "tower", "quota share"
         ])
@@ -687,19 +691,57 @@ def derive_supporting_rule_flags(combined_text):
     if any(x in compact for x in sublimit_terms):
         flags["restrictive_sub_limits"] = 1
 
-    deductible_terms = [
-        "deductible", "deductibles", "retention", "sir",
-        "self insured retention", "self-insured retention", "minimum deductible",
-        "deductible change", "deductible adjustment", "deductible increase",
-        "increased deductible", "higher deductible", "reduced deductible",
-        "alternative deductible", "deductible option", "deductible structure",
-        "deductible mismatch", "named windstorm deductible", "nws deductible",
-        "nat cat deductible", "natural catastrophe deductible", "5% min",
-        "5% minimum", "minimum threshold", "retention appetite",
-        "deductible alignment", "more favourable deductible", "more favorable deductible"
-    ]
+    deductible_base_present = any(x in compact for x in [
+        "deductible",
+        "deductibles",
+        "retention",
+        "sir",
+        "self insured retention",
+        "self-insured retention",
+        "named windstorm deductible",
+        "nws deductible",
+        "nat cat deductible",
+        "natural catastrophe deductible",
+        "minimum deductible"
+    ])
 
-    if any(x in compact for x in deductible_terms):
+    deductible_problem_present = any(x in compact for x in [
+        "deductible mismatch",
+        "deductible was too high",
+        "deductibles were too high",
+        "higher deductible than",
+        "higher deductibles than",
+        "deductible higher than",
+        "deductibles higher than",
+        "retention was too high",
+        "retention too high",
+        "sir was too high",
+        "self-insured retention was too high",
+        "client was willing to accept",
+        "client was not willing to accept",
+        "insured was not willing to accept",
+        "broker was not willing to accept",
+        "unacceptable deductible",
+        "unacceptable retention",
+        "deductible change created",
+        "deductible adjustment created",
+        "required a different deductible",
+        "requested a different deductible",
+        "alternative deductible",
+        "deductible option",
+        "deductible structure did not align",
+        "deductible terms did not align",
+        "retention appetite",
+        "deductible alignment",
+        "more favourable deductible",
+        "more favorable deductible",
+        "competing market terms offered more favourable deductible",
+        "competing market terms offered more favorable deductible",
+        "deductible less favourable than",
+        "deductible less favorable than"
+    ])
+
+    if deductible_base_present and deductible_problem_present:
         flags["deductible_mismatch"] = 1
 
     order_size_terms = [
@@ -728,29 +770,72 @@ def derive_supporting_rule_flags(combined_text):
         flags["broker_switch_displacement"] = 1
 
     preferred_market_strict_terms = [
-        "preferred market", "preferred markets", "preferred panel", "panel market",
-        "strategic partner", "strategic partnership", "incumbent market was selected",
-        "incumbent market was preferred", "lead market was selected",
-        "lead market was preferred", "bound with the lead", "bound with another market",
-        "placed with another market", "placed with the incumbent", "placed with the lead",
-        "went with another market", "went with the incumbent", "went with the lead",
-        "already placed with", "already been placed with", "lead market preference",
-        "market preference", "broker preference for another market",
-        "client preference for another market", "axa xl has already been placed",
-        "beazley has already been placed", "fm has already been placed",
-        "liberty seguros", "everest insurance", "qbe", "sompo", "fidelis"
+        "preferred market",
+        "preferred markets",
+        "preferred panel",
+        "panel market",
+        "strategic partner",
+        "strategic partnership",
+        "incumbent market was selected",
+        "incumbent market was preferred",
+        "lead market was selected",
+        "lead market was preferred",
+        "bound with the lead",
+        "bound with another market",
+        "bound with other market",
+        "bound elsewhere",
+        "placed with another market",
+        "placed with other markets",
+        "placed with the incumbent",
+        "placed with the lead",
+        "went with another market",
+        "went with other markets",
+        "went with the incumbent",
+        "went with the lead",
+        "taken up by another market",
+        "taken up by other market",
+        "taken by another market",
+        "another market took the order",
+        "another insurer took the order",
+        "another broker took the deal",
+        "another party took the deal",
+        "another party took the order",
+        "already placed with",
+        "already been placed with",
+        "lead market preference",
+        "market preference",
+        "broker preference for another market",
+        "client preference for another market",
+        "client preferred another market",
+        "broker preferred another market",
+        "axa xl has already been placed",
+        "beazley has already been placed",
+        "fm has already been placed",
+        "liberty seguros",
+        "everest insurance",
+        "qbe",
+        "sompo",
+        "fidelis"
     ]
 
-    false_preferred_patterns = [
+    preferred_false_patterns = [
         "broker ultimately bound convex",
         "bound convex to",
         "convex receiving a reduced share",
         "convex was bound to",
-        "convex bound to"
+        "convex bound to",
+        "convex was bound",
+        "broker required a smaller participation",
+        "smaller participation",
+        "reduced share for convex",
+        "convex reduced share",
+        "convex line reduced",
+        "convex was willing",
+        "convex agreed"
     ]
 
     if any(x in compact for x in preferred_market_strict_terms):
-        if not any(x in compact for x in false_preferred_patterns):
+        if not any(x in compact for x in preferred_false_patterns):
             flags["preferred_market_partnerships"] = 1
 
     facility_terms = [
@@ -761,6 +846,61 @@ def derive_supporting_rule_flags(combined_text):
 
     if any(x in compact for x in facility_terms):
         flags["facility_line_slip_displacement"] = 1
+
+    negotiation_fatigue_terms = [
+        "no reply",
+        "no response",
+        "not had a response",
+        "haven't had a response",
+        "have not had a response",
+        "still waiting",
+        "waiting for your response",
+        "waiting for convex",
+        "chasing",
+        "following up",
+        "follow up",
+        "any update",
+        "any news",
+        "please respond",
+        "please reply",
+        "reply asap",
+        "respond asap",
+        "asap please",
+        "urgent response",
+        "urgent reply",
+        "taking too long",
+        "taken too long",
+        "taking a long time",
+        "taking lot of time",
+        "taking a lot of time",
+        "delay in response",
+        "delayed response",
+        "slow response",
+        "slow to respond",
+        "frustrating",
+        "frustrated",
+        "getting frustrating",
+        "need your response",
+        "need your reply",
+        "need terms urgently",
+        "we are being pushed",
+        "client is chasing",
+        "broker is chasing",
+        "market is chasing",
+        "we need this today",
+        "we need this urgently",
+        "can you revert",
+        "please revert",
+        "kindly revert",
+        "haven't heard",
+        "have not heard",
+        "not heard back",
+        "chased several times",
+        "multiple chasers"
+    ]
+
+    if any(x in compact for x in negotiation_fatigue_terms):
+        flags["negotiation_fatigue"] = 1
 
     captive_terms = [
         "captive", "protected cell captive", "pcc", "self insure",
@@ -809,21 +949,18 @@ The NTU_EXPLANATION must explain ONLY the selected commercial subcategories from
 - BROKER_SWITCH_DISPLACEMENT
 - PREFERRED_MARKET_PARTNERSHIPS
 - FACILITY_LINE_SLIP_DISPLACEMENT
+- NEGOTIATION_FATIGUE
 - CAPTIVE_EXPANSION_SECURITIZATION
 - COMPOSITE_MULTI_CLASS_BUNDLING
 
 Do NOT explain:
 - LATE_QUOTE
-- NEGOTIATION_FATIGUE
 - first conversation date
 - first Convex quote date
 - days to quote
 - quote timing
 - email count
 - conversation duration
-- delay or late response
-
-If only LATE_QUOTE and/or NEGOTIATION_FATIGUE are selected and no commercial subcategory is selected, return a blank NTU_EXPLANATION between the markers.
 
 SYSTEM-EXTRACTED METADATA FOR CALCULATION ONLY:
 FIRST_CONVERSATION_STARTED: {first_date}
@@ -833,7 +970,8 @@ EMAIL_COUNT_ADJUSTMENT: {metadata["email_count_adjustment_applied"]}
 EMAIL_COUNT_DETECTED_AFTER_ADJUSTMENT: {metadata["email_count"]}
 DAYS_TO_FIRST_QUOTE: {metadata["days_to_quote"]}
 SYSTEM_LATE_QUOTE_RULE: {metadata["late_quote"]}
-SYSTEM_NEGOTIATION_FATIGUE_RULE: {metadata["negotiation_fatigue"]}
+SYSTEM_NEGOTIATION_FATIGUE_RULE: Negotiation fatigue is no longer based on email count. It must be marked only if the conversation text shows frustration, repeated chasing, no response, delayed response, or slow response.
+NEGOTIATION_FATIGUE_TEXT_HINT: {rule_flags["negotiation_fatigue"]}
 
 Supporting text signals:
 COMPETITOR_UNDERCUT_SIGNIFICANTLY_ON_PRICE_HINT: {rule_flags["competitor_undercut_significantly_on_price"]}
@@ -881,9 +1019,11 @@ This includes NatCat, Flood, Earthquake, Wind, Named Windstorm, Storm/Hail, Snow
 If the explanation says restrictive sublimits, sublimits on key natural catastrophe perils, capped at, reduced sublimit, narrower cover, or less attractive coverage, this should be 1.
 
 5. DEDUCTIBLE_MISMATCH:
-Mark 1 when deductible, retention, SIR, self-insured retention, minimum deductible, named windstorm deductible, NatCat deductible, or deductible change creates a placement issue.
-This includes broker/client requesting a different deductible, deductible being higher than target, deductible change during negotiation, deductible adjustment from original terms, or deductible terms being less favourable than competing/lead terms.
-If the explanation says deductible change, deductible adjustment, minimum deductible, named windstorm deductible, or retention appetite, this should be 1.
+Mark 1 only when deductible, retention, SIR, or self-insured retention terms created a placement issue.
+Do not mark this merely because deductible values are mentioned in the submission.
+Only mark 1 when the deductible or self-insured retention level proposed by Convex was higher than the client/broker was willing to accept, or when the broker/client requested a different deductible structure that Convex could not support.
+Also mark 1 if there is evidence of unacceptable deductible, higher deductible than requested, deductible change causing issue, named windstorm deductible disagreement, NatCat deductible issue, or retention/SIR level being commercially unattractive.
+If deductible values are only listed as normal terms without disagreement, do not mark this.
 
 6. ORDER_SIZE_PARTICIPATION_DEFICIT:
 Mark 1 when the issue relates to Convex's share, line size, order size, available capacity, participation percentage, signed line, written line, oversubscription, reduced share, or broker requiring a different/smaller/larger participation.
@@ -899,21 +1039,38 @@ Examples:
 Mark 1 only when there is evidence of broker change, local office displacement, another broker controlling the placement, or Convex being displaced because of a broker strategy or communication route.
 
 8. PREFERRED_MARKET_PARTNERSHIPS:
-Mark 1 only when another market/insurer/lead is explicitly selected, preferred, already placed, followed, or strategically favoured.
-Do NOT mark this just because Convex was bound at a smaller share.
-Do NOT mark this just because a broker negotiated Convex down.
-Only mark when the text clearly says another market was preferred, selected, placed, followed, or had preferred/incumbent/lead status.
-Examples:
-- broker placed with AXA XL / Beazley / FM / QBE / Sompo / Liberty / Everest instead of Convex;
-- another lead was already placed;
-- broker/client preferred incumbent or panel market;
-- placement followed a lead market and Convex did not win the preferred position.
+Mark 1 only when the document explicitly says another insurer, market, lead market, broker, facility, panel market, or other party took the deal, was selected, was preferred, was already placed, or was strategically favoured over Convex.
+Do not mark this just because Convex was bound at a smaller share.
+Do not mark this just because Convex reduced its line.
+Do not mark this just because broker negotiated Convex down.
+Do not mark this unless there is clear evidence that another party/market won, took, led, controlled, or was preferred for the placement.
+Examples that qualify:
+- placed with another market
+- bound with another market
+- went with the lead/incumbent
+- already placed with AXA XL / Beazley / FM / QBE / Sompo / Liberty / Everest
+- another broker/market took the order
+- broker/client preferred another market
 
 9. FACILITY_LINE_SLIP_DISPLACEMENT:
 Mark 1 when the risk was placed or likely placed through a facility, line slip, binder, delegated authority, pre-negotiated broker facility, or similar operational placement route.
 
 10. NEGOTIATION_FATIGUE:
-System-calculated only. Do not explain this in NTU_EXPLANATION.
+Mark 1 only when the email chain contains actual evidence of frustration, repeated chasing, delayed response, no reply, slow response, or the broker/client saying Convex is taking too long.
+Do not mark this based on the number of emails alone.
+Examples that qualify:
+- no reply / no response
+- still waiting
+- following up / chasing
+- any update / any news
+- please reply asap / respond asap
+- taking too long
+- delayed response
+- getting frustrating
+- we are being pushed
+- client is chasing
+- need your response urgently
+If the chain has many emails but no frustration or delay evidence, mark 0.
 
 11. LATE_QUOTE:
 System-calculated only. Do not explain this in NTU_EXPLANATION.
@@ -930,16 +1087,16 @@ DECISION RULES:
 - Do not mark everything.
 - Mark only categories supported by actual commercial evidence in the chain.
 - Do not use "no NTU evidence" or "successful placement" language.
-- Do not explain LATE_QUOTE.
-- Do not explain NEGOTIATION_FATIGUE.
-- Do not mention dates, timing, email count, delays, or conversation duration inside NTU_EXPLANATION.
-- Be careful with PREFERRED_MARKET_PARTNERSHIPS: do not mark unless another market/insurer/lead/preferred panel is clearly involved.
+- Be very strict with PREFERRED_MARKET_PARTNERSHIPS.
+- Be very strict with DEDUCTIBLE_MISMATCH.
+- Mark NEGOTIATION_FATIGUE only from frustration / chasing / delay evidence, not email count.
+- Do not mention dates, quote timing, email count, or conversation duration inside NTU_EXPLANATION.
 
 Return output in EXACTLY this format.
 Do not return JSON.
 Do not return markdown.
 Do not add extra keys.
-For LATE_QUOTE and NEGOTIATION_FATIGUE, return 0; the system will override them.
+For LATE_QUOTE, return 0; the system will override it.
 
 COMPETITOR_UNDERCUT_SIGNIFICANTLY_ON_PRICE: 0
 PRICING_INELASTICITY: 0
@@ -996,7 +1153,7 @@ def classify_with_llm(session, account_folder_name, combined_text):
         "broker_switch_displacement": safe_int(extract_value(raw, "BROKER_SWITCH_DISPLACEMENT")),
         "preferred_market_partnerships": safe_int(extract_value(raw, "PREFERRED_MARKET_PARTNERSHIPS")),
         "facility_line_slip_displacement": safe_int(extract_value(raw, "FACILITY_LINE_SLIP_DISPLACEMENT")),
-        "negotiation_fatigue": metadata["negotiation_fatigue"],
+        "negotiation_fatigue": rule_flags.get("negotiation_fatigue", 0),
         "late_quote": metadata["late_quote"],
         "captive_expansion_securitization": safe_int(extract_value(raw, "CAPTIVE_EXPANSION_SECURITIZATION")),
         "composite_multi_class_bundling": safe_int(extract_value(raw, "COMPOSITE_MULTI_CLASS_BUNDLING")),
@@ -1029,6 +1186,7 @@ def classify_with_llm(session, account_folder_name, combined_text):
         "deductible_mismatch",
         "order_size_participation_deficit",
         "facility_line_slip_displacement",
+        "negotiation_fatigue",
         "captive_expansion_securitization",
         "composite_multi_class_bundling"
     ]
@@ -1039,16 +1197,6 @@ def classify_with_llm(session, account_folder_name, combined_text):
 
     text_lower = (combined_text or "").lower()
 
-    preferred_false_text = [
-        "broker ultimately bound convex",
-        "bound convex to",
-        "convex receiving a reduced share",
-        "convex was bound to",
-        "convex bound to",
-        "broker required a smaller participation",
-        "smaller participation"
-    ]
-
     preferred_true_text = [
         "preferred market",
         "preferred panel",
@@ -1058,15 +1206,29 @@ def classify_with_llm(session, account_folder_name, combined_text):
         "lead market was selected",
         "lead market was preferred",
         "bound with another market",
+        "bound with other market",
+        "bound elsewhere",
         "placed with another market",
+        "placed with other markets",
         "placed with the incumbent",
         "placed with the lead",
         "went with another market",
+        "went with other markets",
         "went with the incumbent",
         "went with the lead",
+        "taken up by another market",
+        "taken up by other market",
+        "taken by another market",
+        "another market took the order",
+        "another insurer took the order",
+        "another broker took the deal",
+        "another party took the deal",
+        "another party took the order",
         "already placed with",
         "broker preference for another market",
         "client preference for another market",
+        "client preferred another market",
+        "broker preferred another market",
         "liberty seguros",
         "everest insurance",
         "axa xl has already been placed",
@@ -1076,10 +1238,10 @@ def classify_with_llm(session, account_folder_name, combined_text):
         "fidelis"
     ]
 
-    if any(x in text_lower for x in preferred_false_text) and not any(x in text_lower for x in preferred_true_text):
+    if not any(x in text_lower for x in preferred_true_text):
         result["preferred_market_partnerships"] = 0
 
-    if rule_flags.get("preferred_market_partnerships", 0) == 1:
+    if rule_flags.get("preferred_market_partnerships", 0) == 1 and any(x in text_lower for x in preferred_true_text):
         result["preferred_market_partnerships"] = 1
 
     if sum([safe_int(result.get(k)) for k in commercial_flag_keys]) == 0:
@@ -1095,8 +1257,6 @@ def classify_with_llm(session, account_folder_name, combined_text):
             result["deductible_mismatch"] = 1
         elif rule_flags.get("order_size_participation_deficit", 0) == 1:
             result["order_size_participation_deficit"] = 1
-        elif rule_flags.get("preferred_market_partnerships", 0) == 1:
-            result["preferred_market_partnerships"] = 1
         else:
             result["pricing_inelasticity"] = 1
 
@@ -1104,22 +1264,17 @@ def classify_with_llm(session, account_folder_name, combined_text):
 
     banned_patterns = [
         r"(?i).*late quote.*",
-        r"(?i).*negotiation fatigue.*",
         r"(?i).*days to quote.*",
         r"(?i).*first conversation.*",
         r"(?i).*first convex quote.*",
         r"(?i).*quote timing.*",
         r"(?i).*conversation started.*",
         r"(?i).*quote was sent.*",
-        r"(?i).*sent on \d{4}-\d{2}-\d{2}.*",
+        r"(?i).*sent on \\d{4}-\\d{2}-\\d{2}.*",
         r"(?i).*email count.*",
         r"(?i).*emails transferred.*",
         r"(?i).*number of emails.*",
-        r"(?i).*conversation duration.*",
-        r"(?i).*delay.*",
-        r"(?i).*delayed.*",
-        r"(?i).*response time.*",
-        r"(?i).*days after.*"
+        r"(?i).*conversation duration.*"
     ]
 
     cleaned_lines = []
@@ -1137,7 +1292,7 @@ def classify_with_llm(session, account_folder_name, combined_text):
         if not should_drop:
             cleaned_lines.append(line)
 
-    result["ntu_explanation"] = "\n".join(cleaned_lines).strip()
+    result["ntu_explanation"] = "\\n".join(cleaned_lines).strip()
 
     system_metadata = {
         "first_conversation_started": result["date_of_first_conversation_started"],
@@ -1147,7 +1302,7 @@ def classify_with_llm(session, account_folder_name, combined_text):
         "email_count_detected_after_adjustment": metadata["email_count"],
         "days_to_first_quote": metadata["days_to_quote"],
         "late_quote_rule": "1 if days_to_first_quote > 4 else 0",
-        "negotiation_fatigue_rule": "1 if adjusted email_count_detected > 20 else 0",
+        "negotiation_fatigue_rule": "1 only if text evidence shows frustration, repeated chasing, no response, delayed response, or slow response",
         "all_dates_detected": metadata["all_dates_detected"],
         "quote_candidates": metadata["quote_candidates"],
         "messages_detected": metadata["messages_detected"],
@@ -1351,10 +1506,10 @@ def main(session, LIMIT_N_FOLDERS):
 
                 if parsed_text and parsed_text.strip():
                     all_text_parts.append(
-                        f"\n\n===== FILE: {file_path} =====\n{parsed_text}"
+                        f"\\n\\n===== FILE: {file_path} =====\\n{parsed_text}"
                     )
 
-            combined_text = "\n".join(all_text_parts)
+            combined_text = "\\n".join(all_text_parts)
 
             if not combined_text.strip():
                 failed += 1
