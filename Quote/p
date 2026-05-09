@@ -1,0 +1,51 @@
+### Deductible Mismatch
+
+Mark `DEDUCTIBLE_MISMATCH = 1` only when the submission, broker communication, underwriting notes, or email discussion clearly indicates that the deductible, excess, or self-insured retention (SIR) proposed by Convex was higher than what the client, insured, or broker was willing to accept, and this became a contributing reason for the NTO/decline/loss of order.
+
+This category should represent situations where the retention structure itself was commercially unacceptable to the insured.
+
+Examples of signals:
+- “deductible too high”
+- “SIR higher than acceptable”
+- “client not comfortable with retention”
+- “excess level not competitive”
+- “insured rejected terms due to deductible”
+- “retention higher than expiring”
+- “broker requested lower deductible”
+- “self-insured retention unacceptable”
+
+Do NOT mark as 1:
+- If deductible values are only mentioned informationally
+- If no indication exists that deductible/SIR caused the NTO or decline
+- If the decline reason is pricing, coverage, capacity, engineering, or another factor unrelated to retention levels
+
+Return:
+- 1 = deductible/SIR mismatch materially contributed to the NTO/decline
+- 0 = otherwise
+
+
+
+### Order Size / Participation Deficit
+
+Mark `ORDER_SIZE_PARTICIPATION_DEFICIT = 1` only when the submission, underwriting discussion, or broker communication clearly indicates that the broker/client required a larger order size, line size, participation percentage, or capacity than Convex was willing or able to provide, leading to the loss of the opportunity or placement elsewhere.
+
+This category represents insufficient market participation or inability to meet the requested capacity requirement.
+
+Examples of signals:
+- “required larger line”
+- “capacity insufficient”
+- “unable to meet required participation”
+- “broker needed 10% line but Convex offered 5%”
+- “line size too small”
+- “order filled elsewhere”
+- “market required larger participation”
+- “Convex could not provide required capacity”
+
+Do NOT mark as 1:
+- If participation percentages are mentioned without indicating a problem
+- If another carrier was preferred for reasons unrelated to capacity/order size
+- If the issue is pricing, deductible, coverage, engineering concerns, or relationship factors
+
+Return:
+- 1 = insufficient order size/capacity materially contributed to the NTO/decline
+- 0 = otherwise
