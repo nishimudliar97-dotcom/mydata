@@ -1,3 +1,21 @@
+USE DATABASE EXPERIMENT_TEAM_DB;
+USE SCHEMA PUBLIC;
+
+CREATE OR REPLACE TABLE OPEN_MARKET_CONSTRUCTION_CODE_EXTRACTION (
+    ACCOUNT_FOLDER_NAME           STRING,
+    CONSTRUCTION_CODE             VARIANT,
+    RAW_CONSTRUCTION_TYPES        VARIANT,
+    RAW_TO_NORMALIZED_MAPPING     VARIANT,
+    EVIDENCE                      VARIANT,
+    SOURCE_FILES                  VARIANT,
+    FILES_FOUND                   NUMBER,
+    FILES_PROCESSED               NUMBER,
+    FILES_SKIPPED                 VARIANT,
+    CONFIDENCE                    FLOAT,
+    PROCESSED_AT                  TIMESTAMP_NTZ,
+    ERROR_MESSAGE                 STRING
+);
+
 CREATE OR REPLACE PROCEDURE RUN_OPEN_MARKET_CONSTRUCTION_CODE_EXTRACTION(
     STAGE_ROOT STRING,
     MAX_FOLDERS NUMBER
@@ -20,19 +38,99 @@ from snowflake.snowpark.files import SnowflakeFile
 
 
 # ============================================================
-# 1. STANDARD CONSTRUCTION NORMALIZATION MAP
+# SECTION 1: VARIABLE CONFIGURATION
 # ============================================================
-# This map is used only AFTER a value has already been found
-# in a valid construction context.
+# Keep all variable-specific business configuration here.
 #
-# It does NOT decide whether a value is construction-related.
-# That decision happens earlier:
-#   - XLSX: only under construction-related columns
-#   - PDF/DOC/DOCX/EML: only if AI_EXTRACT finds explicit
-#     construction context
+# Today we are extracting only CONSTRUCTION_CODE.
+# Later, when you add a new variable, this is the first place
+# where you should add its:
+#   - variable key
+#   - Excel header names
+#   - AI extraction instructions
+#
+# The rest of the pipeline is written in a reusable way so that
+# future variables can follow the same structure.
 # ============================================================
 
-EXACT_NORMALIZATION_MAP = {
+VARIABLE_CONFIGS = {
+    "CONSTRUCTION_CODE": {
+        "display_name": "Construction Code",
+
+        # Used for XLSX header detection.
+        # XLSX values are accepted ONLY when they come from columns
+        # matching one of these construction-related headers.
+        "xlsx_headers_exact": {
+            "construction",
+            "construction description",
+            "construction type",
+            "construction code",
+            "iso construction",
+            "building construction",
+            "construction class",
+            "const",
+            "const.",
+            "const type",
+            "const. type"
+        },
+
+        # This text is injected into the AI_EXTRACT prompt.
+        # For future variables, put that variable's extraction logic here.
+        "ai_table_description": """
+        Extract ONLY actual construction-type values for the insured property/building.
+
+        A row is valid only when the value is explicitly tied to a construction-related
+        field, label, table column, or statement, such as:
+        - Construction
+        - Construction Description
+        - Construction Type
+        - Construction Code
+        - ISO Construction
+        - Building Construction
+        - Construction Class
+
+        Valid examples may include raw values such as:
+        MNC, JM, Frame, Wood Frame, Non-Combustible, Concrete Tilt Wall,
+        CMU, Masonry, PEMB, CB-TILT, etc.
+
+        Very important:
+        - Do NOT return general narrative mentions of words such as frame, concrete,
+          steel, metal, masonry, brick, wall, or non-combustible unless the document
+          clearly uses them as a construction-type value.
+        - Do NOT return percentages, currency amounts, dates, company names,
+          insured names, limits, deductibles, or unrelated text.
+        - If the document does not contain explicit construction-type information,
+          return no rows.
+        """,
+
+        # Evidence must contain at least one of these markers.
+        # This prevents acceptance of vague narrative mentions.
+        "evidence_context_markers": [
+            "construction",
+            "construction description",
+            "construction type",
+            "construction code",
+            "iso construction",
+            "building construction",
+            "construction class"
+        ]
+    }
+}
+
+
+# ============================================================
+# SECTION 2: CONSTRUCTION-SPECIFIC NORMALIZATION
+# ============================================================
+# This is the part you will extend later if new raw construction
+# descriptions appear in the files.
+#
+# Important:
+# This section only NORMALIZES values that have already passed
+# the extraction filters. It does not decide whether a value is
+# valid construction data in the first place.
+# ============================================================
+
+CONSTRUCTION_EXACT_NORMALIZATION_MAP = {
     "UNKNOWN": "Unknown",
 
     "FRAME": "Frame",
@@ -80,7 +178,7 @@ EXACT_NORMALIZATION_MAP = {
 
 
 # ============================================================
-# 2. BASIC HELPERS
+# SECTION 3: GENERIC HELPER FUNCTIONS
 # ============================================================
 
 def clean_text(value):
@@ -98,7 +196,7 @@ def clean_text(value):
 
 def canonical_key(value):
     """
-    Creates a cleaned uppercase key used only for matching.
+    Creates a cleaned uppercase key for matching.
     """
     value = clean_text(value)
 
@@ -114,120 +212,21 @@ def canonical_key(value):
     return value
 
 
-def normalize_construction_type(raw_value):
-    """
-    Normalizes an already-valid raw construction value into
-    the approved construction code categories.
-    """
-    key = canonical_key(raw_value)
-
-    if not key:
-        return "Unknown"
-
-    if key in EXACT_NORMALIZATION_MAP:
-        return EXACT_NORMALIZATION_MAP[key]
-
-    # Rule-based fallback for new but clear raw values
-    if "WOOD" in key and "FRAME" in key:
-        return "Frame"
-
-    if key == "FRAME":
-        return "Frame"
-
-    if "JOISTED MASONRY" in key:
-        return "Joisted Masonry"
-
-    if "HEAVY TIMBER" in key:
-        return "Heavy Timber Joisted Masonry"
-
-    if "FIRE RESISTIVE" in key and "MODIFIED" in key:
-        return "Modified Fire Resistive"
-
-    if "FIRE RESISTIVE" in key:
-        return "Fire Resistive"
-
-    if "SUPERIOR" in key and "MASONRY" in key and "NON" in key and "COMBUST" in key:
-        return "Superior Masonry Non-Combustible"
-
-    if "SUPERIOR" in key and "NON" in key and "COMBUST" in key:
-        return "Superior Non-Combustible"
-
-    if "NON" in key and "COMBUST" in key and "MASONRY" in key:
-        return "Masonry Non-Combustible"
-
-    if "NON" in key and "COMBUST" in key:
-        return "Non-Combustible"
-
-    if any(token in key for token in [
-        "CMU",
-        "MASONRY",
-        "BRICK",
-        "BLOCK",
-        "TILT WALL",
-        "TILT-WALL",
-        "TILT UP",
-        "TILT-UP",
-        "CONCRETE TILT",
-        "CB-TILT",
-        "CB TILT"
-    ]):
-        return "Masonry Non-Combustible"
-
-    if "CONCRETE" in key or "STEEL FRAME" in key:
-        return "Modified Fire Resistive"
-
-    if "METAL" in key:
-        return "Non-Combustible"
-
-    return "Unknown"
-
-
-def likely_construction_header(value):
-    """
-    Detects real construction-related spreadsheet headers.
-    This is intentionally stricter than before.
-    """
+def escape_sql_string(value):
     if value is None:
-        return False
+        return ""
 
-    h = str(value).strip().lower()
-    h = re.sub(r'\s+', ' ', h)
-
-    exact_or_strong_headers = {
-        "construction",
-        "construction description",
-        "construction type",
-        "construction code",
-        "iso construction",
-        "building construction",
-        "construction class",
-        "const",
-        "const.",
-        "const type",
-        "const. type"
-    }
-
-    if h in exact_or_strong_headers:
-        return True
-
-    # Allow clear compound variants
-    if "construction" in h and any(x in h for x in ["description", "type", "code", "class"]):
-        return True
-
-    return False
+    return str(value).replace("'", "''")
 
 
-def is_probably_invalid_raw_value(value):
+def is_probably_invalid_value(value):
     """
-    Filters blanks and obvious non-values.
-    Does NOT filter real raw construction text.
+    Generic blank/non-value filter.
     """
     value = clean_text(value)
 
     if not value:
         return True
-
-    upper_value = value.upper()
 
     invalid_values = {
         "N/A",
@@ -240,44 +239,7 @@ def is_probably_invalid_raw_value(value):
         "UNKNOWN VALUE"
     }
 
-    if upper_value in invalid_values:
-        return True
-
-    return False
-
-
-def add_raw_value(
-    raw_value,
-    raw_counter,
-    normalized_counter,
-    raw_to_normalized_mapping,
-    evidence_rows,
-    source_file,
-    evidence_text
-):
-    raw_value = clean_text(raw_value)
-
-    if is_probably_invalid_raw_value(raw_value):
-        return
-
-    normalized = normalize_construction_type(raw_value)
-
-    raw_counter[raw_value] += 1
-    normalized_counter[normalized] += 1
-    raw_to_normalized_mapping[raw_value] = normalized
-
-    evidence_rows.append({
-        "source_file": source_file,
-        "raw_value": raw_value,
-        "normalized_code": normalized,
-        "evidence": evidence_text
-    })
-
-
-def escape_sql_string(value):
-    if value is None:
-        return ""
-    return str(value).replace("'", "''")
+    return value.upper() in invalid_values
 
 
 def split_stage_root(stage_root):
@@ -363,17 +325,159 @@ def get_extension(file_name):
     return "." + file_name.split(".")[-1]
 
 
+def get_already_processed_folders(session):
+    """
+    Any folder already present in the output table is treated as processed.
+    Therefore, when the procedure runs again, it automatically moves to
+    the next unprocessed folders.
+
+    If you want to reprocess one specific folder later, just delete that
+    folder's row from the output table and run the procedure again.
+    """
+    rows = session.sql("""
+        SELECT DISTINCT ACCOUNT_FOLDER_NAME
+        FROM OPEN_MARKET_CONSTRUCTION_CODE_EXTRACTION
+    """).collect()
+
+    return {row["ACCOUNT_FOLDER_NAME"] for row in rows}
+
+
 # ============================================================
-# 3. XLSX EXTRACTION
-# ============================================================
-# XLSX is treated as the most reliable source because we only
-# count values under actual construction-related columns.
+# SECTION 4: CONSTRUCTION NORMALIZATION FUNCTIONS
 # ============================================================
 
-def extract_from_xlsx(scoped_file_url):
+def normalize_construction_type(raw_value):
     """
-    Reads XLSX using openpyxl and returns every value found under
-    explicit construction-related columns.
+    Converts a raw construction value into the standard code bucket.
+    """
+    key = canonical_key(raw_value)
+
+    if not key:
+        return "Unknown"
+
+    if key in CONSTRUCTION_EXACT_NORMALIZATION_MAP:
+        return CONSTRUCTION_EXACT_NORMALIZATION_MAP[key]
+
+    # Rule-based fallbacks for unseen but clear descriptions.
+    if "WOOD" in key and "FRAME" in key:
+        return "Frame"
+
+    if key == "FRAME":
+        return "Frame"
+
+    if "JOISTED MASONRY" in key:
+        return "Joisted Masonry"
+
+    if "HEAVY TIMBER" in key:
+        return "Heavy Timber Joisted Masonry"
+
+    if "FIRE RESISTIVE" in key and "MODIFIED" in key:
+        return "Modified Fire Resistive"
+
+    if "FIRE RESISTIVE" in key:
+        return "Fire Resistive"
+
+    if "SUPERIOR" in key and "MASONRY" in key and "NON" in key and "COMBUST" in key:
+        return "Superior Masonry Non-Combustible"
+
+    if "SUPERIOR" in key and "NON" in key and "COMBUST" in key:
+        return "Superior Non-Combustible"
+
+    if "NON" in key and "COMBUST" in key and "MASONRY" in key:
+        return "Masonry Non-Combustible"
+
+    if "NON" in key and "COMBUST" in key:
+        return "Non-Combustible"
+
+    if any(token in key for token in [
+        "CMU",
+        "MASONRY",
+        "BRICK",
+        "BLOCK",
+        "TILT WALL",
+        "TILT-WALL",
+        "TILT UP",
+        "TILT-UP",
+        "CONCRETE TILT",
+        "CB-TILT",
+        "CB TILT"
+    ]):
+        return "Masonry Non-Combustible"
+
+    if "CONCRETE" in key or "STEEL FRAME" in key:
+        return "Modified Fire Resistive"
+
+    if "METAL" in key:
+        return "Non-Combustible"
+
+    return "Unknown"
+
+
+def add_construction_value(
+    raw_value,
+    raw_counter,
+    normalized_counter,
+    raw_to_normalized_mapping,
+    evidence_rows,
+    source_file,
+    evidence_text
+):
+    """
+    Adds one accepted construction value into all folder-level aggregates.
+    """
+    raw_value = clean_text(raw_value)
+
+    if is_probably_invalid_value(raw_value):
+        return
+
+    normalized_value = normalize_construction_type(raw_value)
+
+    raw_counter[raw_value] += 1
+    normalized_counter[normalized_value] += 1
+    raw_to_normalized_mapping[raw_value] = normalized_value
+
+    evidence_rows.append({
+        "source_file": source_file,
+        "raw_value": raw_value,
+        "normalized_code": normalized_value,
+        "evidence": evidence_text
+    })
+
+
+# ============================================================
+# SECTION 5: XLSX EXTRACTION
+# ============================================================
+# XLSX is handled separately because AI_EXTRACT does not support
+# XLSX files directly. We read the workbook and only accept values
+# that occur under explicit construction-related columns.
+# ============================================================
+
+def is_matching_xlsx_header(value, variable_key):
+    if value is None:
+        return False
+
+    config = VARIABLE_CONFIGS[variable_key]
+
+    header = str(value).strip().lower()
+    header = re.sub(r'\s+', ' ', header)
+
+    if header in config["xlsx_headers_exact"]:
+        return True
+
+    # Allow obvious long-form variants.
+    if variable_key == "CONSTRUCTION_CODE":
+        if "construction" in header and any(
+            token in header for token in ["description", "type", "code", "class"]
+        ):
+            return True
+
+    return False
+
+
+def extract_construction_from_xlsx(scoped_file_url):
+    """
+    Returns every construction value found under construction-related
+    spreadsheet columns, along with evidence.
     """
     found_values = []
 
@@ -390,26 +494,26 @@ def extract_from_xlsx(scoped_file_url):
         header_row_number = None
         construction_columns = {}
 
-        # Search first 50 rows for a valid header row
+        # Search first 50 rows for a valid header row.
         for row_number, row in enumerate(ws.iter_rows(values_only=True), start=1):
             if row_number > 50:
                 break
 
-            current_construction_columns = {}
+            current_columns = {}
 
             for col_idx, cell_value in enumerate(row):
-                if likely_construction_header(cell_value):
-                    current_construction_columns[col_idx] = clean_text(cell_value)
+                if is_matching_xlsx_header(cell_value, "CONSTRUCTION_CODE"):
+                    current_columns[col_idx] = clean_text(cell_value)
 
-            if current_construction_columns:
+            if current_columns:
                 header_row_number = row_number
-                construction_columns = current_construction_columns
+                construction_columns = current_columns
                 break
 
         if header_row_number is None:
             continue
 
-        # Read all data rows under detected construction columns
+        # Read all rows below the header row.
         for row_number, row in enumerate(ws.iter_rows(values_only=True), start=1):
             if row_number <= header_row_number:
                 continue
@@ -420,7 +524,7 @@ def extract_from_xlsx(scoped_file_url):
 
                 value = clean_text(row[col_idx])
 
-                if is_probably_invalid_raw_value(value):
+                if is_probably_invalid_value(value):
                     continue
 
                 found_values.append({
@@ -438,52 +542,73 @@ def extract_from_xlsx(scoped_file_url):
 
 
 # ============================================================
-# 4. STRICT AI_EXTRACT FOR PDF / DOC / DOCX / EML
+# SECTION 6: STRICT AI_EXTRACT FOR PDF / DOC / DOCX / EML
 # ============================================================
-# IMPORTANT:
-# This replaces the old loose logic.
-#
-# The previous version:
-#   - parsed text
-#   - searched every occurrence of Frame / Metal / Concrete / etc.
-#   - counted them even when they were not construction types
-#
-# This version:
-#   - asks AI_EXTRACT only for explicit construction-type records
-#   - returns nothing if the value is not tied to a construction label,
-#     field, table column, or explicit building-construction statement
+# Snowflake supports table-style extraction where a nested object
+# contains array columns. We use that shape here because it lets us
+# extract a raw value together with its evidence in aligned arrays.
 # ============================================================
 
-def ai_extract_strict_construction_records(session, stage_name, relative_path):
+def build_construction_ai_response_format():
+    config = VARIABLE_CONFIGS["CONSTRUCTION_CODE"]
+
+    # This is a table extraction schema:
+    # construction_table.raw_value[] and construction_table.evidence[]
+    # stay aligned row by row.
+    response_format = f"""
+    {{
+      'schema': {{
+        'type': 'object',
+        'properties': {{
+          'construction_table': {{
+            'description': '{escape_sql_string(config["ai_table_description"])}',
+            'type': 'object',
+            'column_ordering': ['raw_value', 'evidence'],
+            'properties': {{
+              'raw_value': {{
+                'description': 'The exact raw construction-type value as written in the document.',
+                'type': 'array'
+              }},
+              'evidence': {{
+                'description': 'Short supporting text proving the value is explicitly used as a construction field or construction table value.',
+                'type': 'array'
+              }}
+            }}
+          }}
+        }}
+      }}
+    }}
+    """
+
+    return response_format
+
+
+def evidence_has_required_context(evidence_text, variable_key):
+    """
+    Extra safety layer:
+    Even if AI returns a value, we only accept it if the evidence itself
+    contains construction-related context.
+    """
+    if not evidence_text:
+        return False
+
+    evidence_lower = evidence_text.lower()
+    markers = VARIABLE_CONFIGS[variable_key]["evidence_context_markers"]
+
+    return any(marker in evidence_lower for marker in markers)
+
+
+def ai_extract_construction_from_file(session, stage_name, relative_path):
+    """
+    Strict extraction for PDF / DOC / DOCX / EML.
+    Returns:
+      - accepted rows as [{'raw_value': ..., 'evidence': ...}, ...]
+      - score
+      - ai_error
+    """
     relative_path_sql = escape_sql_string(relative_path)
     stage_name_sql = escape_sql_string(stage_name)
-
-    response_format = """
-    {
-      'schema': {
-        'type': 'object',
-        'properties': {
-          'construction_records': {
-            'description': 'Return ONLY actual construction-type values for the insured property/building. A value is valid only when it is explicitly tied to a construction-related field, label, column, or statement, such as Construction, Construction Description, Construction Type, Construction Code, ISO Construction, Building Construction, or an equivalent explicit construction context. Examples of valid raw values may include MNC, JM, Frame, Wood Frame, Non-Combustible, Concrete Tilt Wall, CMU, etc., but only return them if the document itself clearly uses them as construction-type values. DO NOT return general mentions of words such as frame, concrete, steel, metal, masonry, brick, wall, or non-combustible when they occur in ordinary narrative text and are not clearly a construction-type field. DO NOT return percentages, currency amounts, company names, dates, ratios, generic building materials, or unrelated text. If no explicit construction-type information exists, return an empty array.',
-            'type': 'array',
-            'items': {
-              'type': 'object',
-              'properties': {
-                'raw_value': {
-                  'description': 'The exact raw construction-type value as written in the document.',
-                  'type': 'string'
-                },
-                'evidence': {
-                  'description': 'A short quote or nearby text proving that the raw value is explicitly used as a construction-type value, ideally including the construction label, field name, column name, or table context.',
-                  'type': 'string'
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-    """
+    response_format = build_construction_ai_response_format()
 
     sql = f"""
         SELECT AI_EXTRACT(
@@ -498,48 +623,60 @@ def ai_extract_strict_construction_records(session, stage_name, relative_path):
     if isinstance(result, str):
         result = json.loads(result)
 
-    response = result.get("response", {}) if result else {}
-    scoring = result.get("scoring", {}) if result else {}
-    error = result.get("error") if result else None
+    # --------------------------------------------------------
+    # Critical null-safe handling:
+    # AI_EXTRACT can validly return response = null when it
+    # finds nothing. That must NOT be treated as a file failure.
+    # --------------------------------------------------------
+    result = result or {}
+    response = result.get("response") or {}
+    scoring = result.get("scoring") or {}
+    ai_error = result.get("error")
 
-    records = response.get("construction_records", []) or []
+    construction_table = response.get("construction_table") or {}
+
+    raw_values = construction_table.get("raw_value") or []
+    evidence_values = construction_table.get("evidence") or []
+
+    rows = []
+
+    max_len = max(len(raw_values), len(evidence_values))
+
+    for i in range(max_len):
+        raw_value = raw_values[i] if i < len(raw_values) else None
+        evidence = evidence_values[i] if i < len(evidence_values) else None
+
+        raw_value = clean_text(raw_value)
+        evidence = clean_text(evidence)
+
+        if not raw_value:
+            continue
+
+        # Accept only values with explicit construction context in evidence.
+        if not evidence_has_required_context(evidence, "CONSTRUCTION_CODE"):
+            continue
+
+        rows.append({
+            "raw_value": raw_value,
+            "evidence": evidence
+        })
 
     score = None
 
     try:
-        score = scoring.get("scores", {}).get("construction_records", {}).get("score")
+        score = (
+            scoring.get("scores", {})
+            .get("construction_table", {})
+            .get("score")
+        )
     except Exception:
         score = None
 
-    return records, score, error
-
-
-def evidence_looks_contextual(evidence_text):
-    """
-    Extra guardrail on top of the AI prompt.
-    We only accept AI extracted records if the evidence itself
-    contains construction-related context.
-    """
-    if not evidence_text:
-        return False
-
-    e = evidence_text.lower()
-
-    construction_context_markers = [
-        "construction",
-        "construction description",
-        "construction type",
-        "construction code",
-        "iso construction",
-        "building construction",
-        "construction class"
-    ]
-
-    return any(marker in e for marker in construction_context_markers)
+    return rows, score, ai_error
 
 
 # ============================================================
-# 5. MAIN PROCEDURE
+# SECTION 7: MAIN ORCHESTRATION
 # ============================================================
 
 def run(session, STAGE_ROOT, MAX_FOLDERS):
@@ -547,7 +684,7 @@ def run(session, STAGE_ROOT, MAX_FOLDERS):
     stage_name, relative_root = split_stage_root(STAGE_ROOT)
 
     # --------------------------------------------------------
-    # Step 1: List all files under the root path
+    # Step 1: Discover files from stage.
     # --------------------------------------------------------
     list_sql = f"LIST {STAGE_ROOT}"
     list_rows = session.sql(list_sql).collect()
@@ -574,24 +711,46 @@ def run(session, STAGE_ROOT, MAX_FOLDERS):
 
     files_by_folder = defaultdict(list)
 
-    for f in all_files:
-        files_by_folder[f["folder_name"]].append(f)
+    for file_info in all_files:
+        files_by_folder[file_info["folder_name"]].append(file_info)
 
-    folder_names = sorted(files_by_folder.keys())
+    # --------------------------------------------------------
+    # Step 2: Skip folders already present in output table.
+    # This lets each subsequent run automatically take the next
+    # batch of unprocessed account folders.
+    # --------------------------------------------------------
+    already_processed_folders = get_already_processed_folders(session)
+
+    candidate_folder_names = sorted([
+        folder_name
+        for folder_name in files_by_folder.keys()
+        if folder_name not in already_processed_folders
+    ])
 
     if MAX_FOLDERS is not None and int(MAX_FOLDERS) > 0:
-        folder_names = folder_names[:int(MAX_FOLDERS)]
+        folder_names_to_process = candidate_folder_names[:int(MAX_FOLDERS)]
+    else:
+        folder_names_to_process = candidate_folder_names
 
     processed_folder_count = 0
     total_files_processed = 0
+    total_folders_skipped_as_already_processed = len(already_processed_folders)
 
-    supported_ai_extract_extensions = {".pdf", ".doc", ".docx", ".eml"}
-    xlsx_extensions = {".xlsx"}
+    supported_ai_extract_extensions = {
+        ".pdf",
+        ".doc",
+        ".docx",
+        ".eml"
+    }
+
+    xlsx_extensions = {
+        ".xlsx"
+    }
 
     # --------------------------------------------------------
-    # Step 2: Process one account folder at a time
+    # Step 3: Process one account folder as one submission.
     # --------------------------------------------------------
-    for folder_name in folder_names:
+    for folder_name in folder_names_to_process:
 
         folder_files = files_by_folder[folder_name]
 
@@ -614,7 +773,7 @@ def run(session, STAGE_ROOT, MAX_FOLDERS):
 
             try:
                 # ====================================================
-                # XLSX PATH
+                # XLSX FLOW
                 # ====================================================
                 if extension in xlsx_extensions:
                     scoped_url_sql = f"""
@@ -626,10 +785,10 @@ def run(session, STAGE_ROOT, MAX_FOLDERS):
 
                     scoped_file_url = session.sql(scoped_url_sql).collect()[0]["FILE_URL"]
 
-                    xlsx_values = extract_from_xlsx(scoped_file_url)
+                    xlsx_values = extract_construction_from_xlsx(scoped_file_url)
 
                     for item in xlsx_values:
-                        add_raw_value(
+                        add_construction_value(
                             raw_value=item["raw_value"],
                             raw_counter=raw_counter,
                             normalized_counter=normalized_counter,
@@ -639,14 +798,16 @@ def run(session, STAGE_ROOT, MAX_FOLDERS):
                             evidence_text=item["evidence"]
                         )
 
+                    # Even if no construction column/value is found,
+                    # the file was still successfully processed.
                     files_processed += 1
                     source_files.add(file_name)
 
                 # ====================================================
-                # PDF / DOC / DOCX / EML PATH
+                # PDF / DOC / DOCX / EML FLOW
                 # ====================================================
                 elif extension in supported_ai_extract_extensions:
-                    records, score, ai_error = ai_extract_strict_construction_records(
+                    rows, score, ai_error = ai_extract_construction_from_file(
                         session=session,
                         stage_name=stage_name,
                         relative_path=relative_path
@@ -657,32 +818,22 @@ def run(session, STAGE_ROOT, MAX_FOLDERS):
                             f"{file_name}: AI_EXTRACT error: {ai_error}"
                         )
 
-                    accepted_record_count = 0
-
-                    for record in records:
-                        raw_value = clean_text(record.get("raw_value"))
-                        evidence_text = clean_text(record.get("evidence"))
-
-                        # Very important second-level safeguard:
-                        # evidence must itself show construction context.
-                        if not evidence_looks_contextual(evidence_text):
-                            continue
-
-                        add_raw_value(
-                            raw_value=raw_value,
+                    for row in rows:
+                        add_construction_value(
+                            raw_value=row["raw_value"],
                             raw_counter=raw_counter,
                             normalized_counter=normalized_counter,
                             raw_to_normalized_mapping=raw_to_normalized_mapping,
                             evidence_rows=evidence_rows,
                             source_file=file_name,
-                            evidence_text=evidence_text
+                            evidence_text=row["evidence"]
                         )
 
-                        accepted_record_count += 1
-
-                    if score is not None and accepted_record_count > 0:
+                    if score is not None and rows:
                         confidence_scores.append(float(score))
 
+                    # If no rows are returned, that is NOT an error.
+                    # It simply means the file had no explicit construction value.
                     files_processed += 1
                     source_files.add(file_name)
 
@@ -696,6 +847,7 @@ def run(session, STAGE_ROOT, MAX_FOLDERS):
                     })
 
             except Exception as e:
+                # True runtime failures only.
                 skipped_files.append({
                     "file_name": file_name,
                     "reason": str(e)
@@ -711,7 +863,7 @@ def run(session, STAGE_ROOT, MAX_FOLDERS):
             avg_confidence = sum(confidence_scores) / len(confidence_scores)
 
         # --------------------------------------------------------
-        # Step 3: Save one consolidated row per account folder
+        # Step 4: Save one consolidated row per account folder.
         # --------------------------------------------------------
         insert_sql = f"""
             INSERT INTO OPEN_MARKET_CONSTRUCTION_CODE_EXTRACTION (
@@ -749,8 +901,17 @@ def run(session, STAGE_ROOT, MAX_FOLDERS):
         total_files_processed += files_processed
 
     return (
-        f"Completed strict construction code extraction. "
-        f"Folders processed: {processed_folder_count}. "
-        f"Files processed: {total_files_processed}."
+        f"Completed construction code extraction. "
+        f"New folders processed in this run: {processed_folder_count}. "
+        f"Files processed in this run: {total_files_processed}. "
+        f"Folders already present in output table and skipped: {total_folders_skipped_as_already_processed}. "
+        f"Unprocessed folders remaining after this run: "
+        f"{max(0, len(candidate_folder_names) - processed_folder_count)}."
     )
 $$;
+
+
+CALL RUN_OPEN_MARKET_CONSTRUCTION_CODE_EXTRACTION(
+    '@OPEN_MARKET_SUBMISSION/Open_Market',
+    10
+);
