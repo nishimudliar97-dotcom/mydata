@@ -62,7 +62,7 @@ from snowflake.snowpark.files import SnowflakeFile
 
 CURRENT_YEAR = datetime.utcnow().year
 
-ENABLE_CLIENT_NAME_TEST_FILTER = True
+ENABLE_CLIENT_NAME_TEST_FILTER = False
 
 TEST_CLIENT_NAME_KEYWORDS = [
     "STARWOOD",
@@ -79,6 +79,7 @@ VARIABLES = {
         "output_column": "CONSTRUCTION_CODE",
         "table_name": "construction_table",
         "headers": {
+            "construction": 4,
             "construction code": 1,
             "const code": 1,
             "const. code": 1,
@@ -92,8 +93,7 @@ VARIABLES = {
             "construction definition": 3,
             "construction description": 3,
             "construction type": 3,
-            "building construction": 3,
-            "construction": 4
+            "building construction": 3
         },
         "context_markers": [
             "construction",
@@ -105,7 +105,7 @@ VARIABLES = {
             "specific construction",
             "general construction"
         ],
-        "ai_description": "Extract ONLY construction-type or construction-code values for the insured property/building. Valid values may include construction codes such as 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 or raw construction descriptions such as Frame, Wood frame, Joisted Masonry, Masonry/Joisted, Non-Combustible, MNC, Concrete, Reinforced Concrete, Fire Resistive, Masonry, Steel, PEMB, CMU, Brick, Concrete Tilt Wall, Specific Construction Class, General Construction, Construction Type, or Construction Code. Return values only when they are clearly part of a construction-related field, label, table column, or statement. Do not return unrelated narrative mentions of frame, steel, concrete, masonry, metal, brick, or wall."
+        "ai_description": "Extract ONLY construction-type or construction-code values for the insured property/building. Valid values may include construction codes such as 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 or raw construction descriptions such as Frame, Wood frame, Joisted Masonry, Masonry/Joisted, Non-Combustible, MNC, Concrete, Reinforced Concrete, Fire Resistive, Masonry, Steel, PEMB, CMU, Brick, Concrete Tilt Wall, Brick Veneer, Specific Construction Class, General Construction, Construction Type, or Construction Code."
     },
     "YEAR_BUILT": {
         "output_column": "YEAR_BUILT",
@@ -119,6 +119,7 @@ VARIABLES = {
             "year of construction": 1,
             "construction year": 1,
             "yr built": 1,
+            "built": 2,
             "year": 5
         },
         "context_markers": [
@@ -129,7 +130,7 @@ VARIABLES = {
             "construction year",
             "yr built"
         ],
-        "ai_description": "Extract ONLY the original year built of the insured property/building. Valid values are years between 1000 and the current year. Look for Year Built, Original Year Built, Built Year, Year of Construction, or similar labels. Do not return policy years, renewal years, report years, email dates, inspection dates, loss years, or unrelated years."
+        "ai_description": "Extract ONLY the original year built of the insured property/building. Valid values are years between 1000 and the current year."
     },
     "YEAR_OF_LAST_MAJOR_RENOVATION": {
         "output_column": "YEAR_OF_LAST_MAJOR_RENOVATION",
@@ -152,12 +153,18 @@ VARIABLES = {
             "structural upgrade",
             "major structural upgrade"
         ],
-        "ai_description": "Extract ONLY the year of last major renovation or year of major structural upgrade for the insured property/building. Valid values are years between 1000 and the current year. Do not return minor aesthetic changes, policy years, renewal years, report years, email dates, or unrelated years."
+        "ai_description": "Extract ONLY the year of last major renovation or year of major structural upgrade for the insured property/building."
     },
     "SQUARE_FOOTAGE": {
         "output_column": "SQUARE_FOOTAGE",
         "table_name": "square_footage_table",
         "headers": {
+            "building sq. ft.": 1,
+            "building sq ft": 1,
+            "building sqft": 1,
+            "bldg sq. ft.": 1,
+            "bldg sq ft": 1,
+            "bldg sqft": 1,
             "square footage": 1,
             "square feet": 1,
             "sq ft": 1,
@@ -181,21 +188,25 @@ VARIABLES = {
             "sqft",
             "floor area",
             "building area",
-            "gross floor area"
+            "gross floor area",
+            "building sq"
         ],
-        "ai_description": "Extract ONLY square footage, square feet, floor area, building area, or gross floor area for the insured property/building/location. Return numeric area values only. Do not return currency amounts, TIV, values, limits, deductibles, BI values, contents values, or unrelated numbers."
+        "ai_description": "Extract ONLY square footage, square feet, floor area, building area, building sq ft, or gross floor area for the insured property/building/location."
     },
     "NUMBER_OF_STORIES": {
         "output_column": "NUMBER_OF_STORIES",
         "table_name": "stories_table",
         "headers": {
-            "number of stories": 1,
             "# stories": 1,
+            "# of stories": 1,
+            "number of stories": 1,
             "no of stories": 1,
             "no. of stories": 1,
             "stories": 1,
+            "story": 1,
             "number of storeys": 1,
             "# storeys": 1,
+            "# of storeys": 1,
             "storeys": 1,
             "number of stories - above grade": 1,
             "number of stories above grade": 1,
@@ -205,10 +216,11 @@ VARIABLES = {
             "stories",
             "storeys",
             "# stories",
+            "# of stories",
             "number of stories",
             "above grade"
         ],
-        "ai_description": "Extract ONLY number of stories/storeys for the insured property/building. Valid values are small positive whole numbers. Do not return address numbers, policy numbers, years, square footage, or unrelated counts."
+        "ai_description": "Extract ONLY number of stories/storeys for the insured property/building."
     },
     "NUMBER_OF_BASEMENTS": {
         "output_column": "NUMBER_OF_BASEMENTS",
@@ -219,6 +231,7 @@ VARIABLES = {
             "number of basements": 1,
             "number of basement": 1,
             "basements": 1,
+            "basement": 1,
             "basement levels": 1,
             "number of basement levels": 1,
             "no of basement levels": 1,
@@ -230,15 +243,16 @@ VARIABLES = {
             "basement levels",
             "number of basement"
         ],
-        "ai_description": "Extract ONLY the number of basements or basement levels for the insured property/building. Valid values can include 0, 1, 2, 3, etc. Do not return unrelated building counts, stories, years, or area values."
+        "ai_description": "Extract ONLY the number of basements or basement levels for the insured property/building."
     },
     "NUMBER_OF_BUILDINGS_AT_LOCATION": {
         "output_column": "NUMBER_OF_BUILDINGS_AT_LOCATION",
         "table_name": "buildings_table",
         "headers": {
+            "# of buildings": 1,
+            "# buildings": 1,
             "number of buildings at location": 1,
             "number of buildings": 1,
-            "# buildings": 1,
             "no of buildings": 1,
             "no. of buildings": 1,
             "number of building": 1,
@@ -252,17 +266,19 @@ VARIABLES = {
             "number of buildings",
             "number of building",
             "# buildings",
+            "# of buildings",
             "building count",
             "buildings at location",
             "total buildings"
         ],
-        "ai_description": "Extract ONLY the number of buildings at the insured location. Valid values are positive whole numbers. Do not return number of stories, number of basements, square footage, years, or unrelated counts."
+        "ai_description": "Extract ONLY the number of buildings at the insured location."
     },
     "WALL_MATERIAL_EXTERNAL_CLADDING": {
         "output_column": "WALL_MATERIAL_EXTERNAL_CLADDING",
         "raw_output_column": "RAW_WALL_MATERIAL_EXTERNAL_CLADDING",
         "table_name": "wall_material_external_cladding_table",
         "headers": {
+            "construction": 3,
             "wall material / external cladding": 1,
             "wall material/external cladding": 1,
             "wall material external cladding": 1,
@@ -285,15 +301,17 @@ VARIABLES = {
             "cladding",
             "wall cladding",
             "external wall",
-            "exterior wall"
+            "exterior wall",
+            "construction"
         ],
-        "ai_description": "Extract ONLY wall material or external cladding category values for the insured property/building. Look for labels such as Wall Material / External Cladding, Wall Material, External Cladding, Cladding Type, Wall Cladding, Exterior Wall Material, or similar. Valid raw values may include Unknown/default, Brick/unreinforced masonry, Brick veneer, Reinforced masonry, Plywood, Wood planks, Particle board/OSB, Metal panels, Pre-cast concrete elements, Cast-in-place concrete, Gypsum board. Return only values clearly tied to wall material or external cladding."
+        "ai_description": "Extract ONLY wall material or external cladding category values. Construction columns containing values like Brick Veneer can also indicate wall material/external cladding."
     },
     "ROOF_MATERIAL_COVERING": {
         "output_column": "ROOF_MATERIAL_COVERING",
         "raw_output_column": "RAW_ROOF_MATERIAL_COVERING",
         "table_name": "roof_material_covering_table",
         "headers": {
+            "roof": 1,
             "roof material / covering": 1,
             "roof material/covering": 1,
             "roof material covering": 1,
@@ -302,8 +320,7 @@ VARIABLES = {
             "roof system covering": 1,
             "roof system": 2,
             "roof cover": 1,
-            "roof type": 2,
-            "roof": 4
+            "roof type": 2
         },
         "context_markers": [
             "roof material",
@@ -313,7 +330,7 @@ VARIABLES = {
             "roof type",
             "roof"
         ],
-        "ai_description": "Extract ONLY roof material or roof covering values for the insured property/building. Look for labels such as Roof Material / Covering, Roof System Covering, Roof Covering, Roof Type, Roof Material, or similar. Valid raw values may include Unknown/default, Asphalt shingles, Wooden shingles, Clay/concrete tiles, Concrete/clay tiles, Light metal panels, Slate, Built-up roof with gravel, Built-up roof without gravel, Single ply membrane, Single ply membrane ballasted, Standing seam metal roofs, Hurricane Wind-Rated Roof Coverings. Return only values clearly tied to roof material or covering."
+        "ai_description": "Extract ONLY roof material or roof covering values for the insured property/building."
     },
     "FOUNDATION_TYPE": {
         "output_column": "FOUNDATION_TYPE",
@@ -339,7 +356,7 @@ VARIABLES = {
             "pier",
             "basement"
         ],
-        "ai_description": "Extract ONLY foundation type values for the insured property/building. Look for labels such as Foundation Type, Foundation Type (Engineered/Slab/Pier), Foundation System, or similar. Valid raw values may include No basement, Engineering foundation, Engineered foundation, Concrete basement, Mat / slab, Slab, Footing, Post & pier, Post and pier, Pile, Masonry basement, Unknown/default. Return only values clearly tied to foundation type."
+        "ai_description": "Extract ONLY foundation type values for the insured property/building."
     },
     "ROOF_ANCHOR": {
         "output_column": "ROOF_ANCHOR",
@@ -364,7 +381,7 @@ VARIABLES = {
             "hurricane ties",
             "anchor bolts"
         ],
-        "ai_description": "Extract ONLY roof anchor or roof anchorage values for the insured property/building. Look for labels such as Roof Anchor, Roof Anchorage, Roof Anchoring, Roof Attachment, or similar. Valid raw values may include Structurally Connected, Structural, Nails/Screws, Hurricane Ties, Gravity/friction, Unknown/default, Clips, Anchor bolts, Adhesive epoxy. Return only values clearly tied to roof anchorage."
+        "ai_description": "Extract ONLY roof anchor or roof anchorage values for the insured property/building."
     },
     "ROOF_GEOMETRY": {
         "output_column": "ROOF_GEOMETRY",
@@ -388,7 +405,7 @@ VARIABLES = {
             "mansard",
             "stepped"
         ],
-        "ai_description": "Extract ONLY roof geometry or roof shape values for the insured property/building. Look for labels such as Roof Geometry, Roof Shape, Roof Form, or similar. Valid raw values may include Flat, Gable end without bracing, Gable end with bracing, Gable roof with slope greater than 6:12, Hip, Shed, Butterfly, Mansard, Stepped, Unknown/default. Return only values clearly tied to roof geometry or roof shape."
+        "ai_description": "Extract ONLY roof geometry or roof shape values for the insured property/building."
     }
 }
 
@@ -446,6 +463,7 @@ CONSTRUCTION_EXACT_NORMALIZATION_MAP = {
     "BRICK WITH MASONRY": "Masonry Non-Combustible",
     "BRICK/BLOCK": "Masonry Non-Combustible",
     "BRICK ON BLOCK": "Masonry Non-Combustible",
+    "BRICK VENEER": "Masonry Non-Combustible",
     "CMU": "Masonry Non-Combustible",
     "CMU BLOCK": "Masonry Non-Combustible",
     "CMU/BRICK ON BLOCK": "Masonry Non-Combustible",
@@ -567,8 +585,8 @@ def make_json_safe(value):
     value = value.replace("\t", " ")
     value = re.sub(r"\s+", " ", value).strip()
 
-    if len(value) > 700:
-        value = value[:700]
+    if len(value) > 1000:
+        value = value[:1000]
 
     return value
 
@@ -576,8 +594,9 @@ def make_json_safe(value):
 def json_sql_expr(value):
     safe_value = make_json_safe(value)
     safe_json = json.dumps(safe_value, ensure_ascii=False)
-    safe_json = escape_sql_string(safe_json)
-    return "TRY_PARSE_JSON('" + safe_json + "')"
+    safe_json = safe_json.replace(chr(36) + chr(36), "$ $")
+    dollar_quote = chr(36) + chr(36)
+    return "PARSE_JSON(" + dollar_quote + safe_json + dollar_quote + ")"
 
 
 def counter_json_expr(counter_obj):
@@ -588,6 +607,7 @@ def is_probably_invalid_value(value):
     value = clean_text(value)
     if not value:
         return True
+
     invalid_values = {
         "N/A",
         "NA",
@@ -598,6 +618,7 @@ def is_probably_invalid_value(value):
         "TBD",
         "UNKNOWN VALUE"
     }
+
     return value.upper() in invalid_values
 
 
@@ -615,26 +636,33 @@ def get_relative_path_from_list_name(list_name, stage_name):
     name = list_name.replace("\\", "/")
     stage_without_at = stage_name.replace("@", "")
     stage_without_at = stage_without_at.split(".")[-1]
+
     possible_prefixes = [
         stage_without_at + "/",
         stage_without_at.lower() + "/",
         stage_without_at.upper() + "/"
     ]
+
     for prefix in possible_prefixes:
         if name.startswith(prefix):
             return name[len(prefix):]
+
     return name
 
 
 def get_folder_name(relative_path, relative_root):
     path = relative_path.replace("\\", "/").strip("/")
+
     if relative_root:
         root_prefix = relative_root.strip("/") + "/"
         if path.startswith(root_prefix):
             path = path[len(root_prefix):]
+
     parts = path.split("/")
+
     if len(parts) < 2:
         return None
+
     return parts[0]
 
 
@@ -644,8 +672,10 @@ def get_file_name(relative_path):
 
 def get_extension(file_name):
     file_name = file_name.lower()
+
     if "." not in file_name:
         return ""
+
     return "." + file_name.split(".")[-1]
 
 
@@ -654,6 +684,7 @@ def get_already_processed_folders(session):
         SELECT DISTINCT ACCOUNT_FOLDER_NAME
         FROM OPEN_MARKET_CONSTRUCTION_VARIABLE_EXTRACTION_V4
     """).collect()
+
     return {row["ACCOUNT_FOLDER_NAME"] for row in rows}
 
 
@@ -667,7 +698,12 @@ def classify_header(value, variable_key):
     if h in headers:
         return headers[h]
 
+    h_compact = h.replace(".", "").replace("/", " ").replace("-", " ")
+    h_compact = re.sub(r'\s+', ' ', h_compact).strip()
+
     if variable_key == "CONSTRUCTION_CODE":
+        if h == "construction":
+            return 4
         if "construction" in h and "code" in h:
             return 1
         if "iso construction" in h:
@@ -678,13 +714,15 @@ def classify_header(value, variable_key):
             return 2
         if "construction" in h and any(x in h for x in ["definition", "description", "type", "class"]):
             return 3
-        if h == "construction":
+        if h in ["const", "construction"]:
             return 4
 
     if variable_key == "YEAR_BUILT":
         if "year" in h and "built" in h:
             return 1
         if "year" in h and "construction" in h:
+            return 1
+        if h in ["yr built", "built"]:
             return 1
 
     if variable_key == "YEAR_OF_LAST_MAJOR_RENOVATION":
@@ -696,16 +734,34 @@ def classify_header(value, variable_key):
             return 1
 
     if variable_key == "SQUARE_FOOTAGE":
-        if "square" in h and ("feet" in h or "footage" in h):
+        if "building sq" in h and "ft" in h:
             return 1
-        if "sq" in h and "ft" in h:
+        if "bldg sq" in h and "ft" in h:
+            return 1
+        if "building sqft" in h_compact:
+            return 1
+        if "building sq ft" in h_compact:
+            return 1
+        if "sq ft" in h or "sq. ft" in h or "sqft" in h:
+            return 1
+        if "square" in h and ("feet" in h or "footage" in h):
             return 1
         if "floor area" in h:
             return 1
         if "building area" in h:
             return 2
+        if h in ["building sq. ft.", "building sq ft", "building sqft"]:
+            return 1
 
     if variable_key == "NUMBER_OF_STORIES":
+        if h in ["# stories", "# of stories", "no of stories", "no. of stories", "stories"]:
+            return 1
+        if "# stories" in h:
+            return 1
+        if "# of stories" in h:
+            return 1
+        if "number of stories" in h:
+            return 1
         if "stor" in h:
             return 1
 
@@ -714,10 +770,24 @@ def classify_header(value, variable_key):
             return 1
 
     if variable_key == "NUMBER_OF_BUILDINGS_AT_LOCATION":
+        if h in ["# of buildings", "# buildings", "number of buildings", "no of buildings", "no. of buildings"]:
+            return 1
+        if "# of buildings" in h:
+            return 1
+        if "# buildings" in h:
+            return 1
+        if "number of buildings" in h:
+            return 1
+        if "building count" in h:
+            return 1
+        if "total buildings" in h:
+            return 1
         if "building" in h and any(x in h for x in ["number", "#", "count", "total"]):
             return 1
 
     if variable_key == "WALL_MATERIAL_EXTERNAL_CLADDING":
+        if h == "construction":
+            return 3
         if "cladding type" in h:
             return 1
         if "wall" in h and "material" in h:
@@ -732,6 +802,8 @@ def classify_header(value, variable_key):
             return 2
 
     if variable_key == "ROOF_MATERIAL_COVERING":
+        if h == "roof":
+            return 1
         if "roof system covering" in h:
             return 1
         if "roof" in h and "covering" in h:
@@ -742,8 +814,6 @@ def classify_header(value, variable_key):
             return 1
         if "roof type" in h:
             return 2
-        if h == "roof":
-            return 4
 
     if variable_key == "FOUNDATION_TYPE":
         if "foundation type" in h:
@@ -804,6 +874,9 @@ def normalize_construction_type(raw_value):
 
     if re.fullmatch(r'[0-9]', key):
         return CONSTRUCTION_EXACT_NORMALIZATION_MAP.get(key, "Unknown")
+
+    if "BRICK VENEER" in key:
+        return "Masonry Non-Combustible"
 
     if "MASONRY/JOISTED" in key or "JOISTED/MASONRY" in key:
         return "Joisted Masonry"
@@ -929,6 +1002,9 @@ def normalize_roof_material_covering(raw_value):
     if key in ["UNKNOWN", "UNKNOWN/DEFAULT", "DEFAULT", "UNK"]:
         return "Unknown/default"
 
+    if key == "COMP" or "COMPOSITION" in key:
+        return "Asphalt shingles"
+
     if "ASPHALT" in key and "SHINGLE" in key:
         return "Asphalt shingles"
 
@@ -964,9 +1040,6 @@ def normalize_roof_material_covering(raw_value):
 
     if "HURRICANE" in key and "ROOF" in key:
         return "Hurricane Wind-Rated Roof Coverings"
-
-    if key == "COMP" or "COMPOSITION" in key:
-        return "Asphalt shingles"
 
     return None
 
@@ -1158,6 +1231,58 @@ def normalize_positive_integer(value, allow_zero=False, max_value=None):
         return None
 
 
+def normalize_stories(value):
+    value = clean_text(value)
+    if not value:
+        return None
+
+    value = value.replace(",", "")
+    numbers = re.findall(r'\b\d+\b', value)
+
+    if not numbers:
+        return None
+
+    numbers_int = [int(x) for x in numbers if 0 < int(x) <= 200]
+
+    if not numbers_int:
+        return None
+
+    if len(numbers_int) == 1:
+        return str(numbers_int[0])
+
+    return " & ".join(str(x) for x in sorted(set(numbers_int)))
+
+
+def normalize_building_count(value):
+    value = clean_text(value)
+    if not value:
+        return None
+
+    value_upper = value.upper()
+
+    if any(x in value_upper for x in [
+        "APT",
+        "APTS",
+        "APARTMENT",
+        "APARTMENTS",
+        "OFFICE",
+        "LAUNDRY",
+        "BUILDING",
+        "BUILDINGS",
+        "BLDG",
+        "BLDGS",
+        "UNIT",
+        "UNITS"
+    ]):
+        numbers = re.findall(r'\b\d+\b', value_upper)
+        if numbers:
+            total = sum(int(x) for x in numbers)
+            if total > 0:
+                return str(total)
+
+    return normalize_positive_integer(value, allow_zero=False, max_value=100000)
+
+
 def normalize_square_footage(value):
     number_text = normalize_number_string(value)
     if not number_text:
@@ -1188,13 +1313,13 @@ def normalize_value_for_variable(variable_key, raw_value):
         return normalize_square_footage(raw_value)
 
     if variable_key == "NUMBER_OF_STORIES":
-        return normalize_positive_integer(raw_value, allow_zero=False, max_value=200)
+        return normalize_stories(raw_value)
 
     if variable_key == "NUMBER_OF_BASEMENTS":
         return normalize_positive_integer(raw_value, allow_zero=True, max_value=20)
 
     if variable_key == "NUMBER_OF_BUILDINGS_AT_LOCATION":
-        return normalize_positive_integer(raw_value, allow_zero=False, max_value=100000)
+        return normalize_building_count(raw_value)
 
     if variable_key == "WALL_MATERIAL_EXTERNAL_CLADDING":
         return normalize_wall_material_external_cladding(raw_value)
@@ -1235,88 +1360,6 @@ def add_value(variable_key, raw_value, counters, raw_counters, raw_construction_
         raw_counters[variable_key][raw_value] += count_value
 
 
-def row_matches_test_client(row, client_col_indexes):
-    if not ENABLE_CLIENT_NAME_TEST_FILTER:
-        return True
-
-    if not client_col_indexes:
-        return True
-
-    for col_idx in client_col_indexes:
-        if col_idx >= len(row):
-            continue
-
-        value = clean_text(row[col_idx])
-
-        if not value:
-            continue
-
-        value_upper = value.upper()
-
-        for keyword in TEST_CLIENT_NAME_KEYWORDS:
-            if keyword in value_upper:
-                return True
-
-    return False
-
-
-def find_client_name_columns(header_row):
-    client_cols = []
-
-    for col_idx, cell_value in enumerate(header_row):
-        h = normalize_header(cell_value)
-
-        if h in ["client name", "insured name", "account name", "named insured", "client"]:
-            client_cols.append(col_idx)
-        elif "client" in h and "name" in h:
-            client_cols.append(col_idx)
-        elif "insured" in h and "name" in h:
-            client_cols.append(col_idx)
-
-    return client_cols
-
-
-def select_best_column(ws, header_row_number, candidate_columns, client_col_indexes):
-    data_rows = list(ws.iter_rows(values_only=True))
-    scored_candidates = []
-
-    for col_idx, header_name, priority in candidate_columns:
-        non_empty_count = 0
-
-        for row_number, row in enumerate(data_rows, start=1):
-            if row_number <= header_row_number:
-                continue
-
-            if col_idx >= len(row):
-                continue
-
-            if not row_matches_test_client(row, client_col_indexes):
-                continue
-
-            value = clean_text(row[col_idx])
-
-            if not is_probably_invalid_value(value):
-                non_empty_count += 1
-
-        if non_empty_count > 0:
-            scored_candidates.append({
-                "col_idx": col_idx,
-                "header_name": header_name,
-                "priority": priority,
-                "non_empty_count": non_empty_count
-            })
-
-    if not scored_candidates:
-        return None
-
-    scored_candidates = sorted(
-        scored_candidates,
-        key=lambda x: (x["priority"], -x["non_empty_count"], x["col_idx"])
-    )
-
-    return scored_candidates[0]
-
-
 def extract_variables_from_xlsx(scoped_file_url):
     extracted = {variable_key: [] for variable_key in VARIABLES.keys()}
 
@@ -1330,35 +1373,25 @@ def extract_variables_from_xlsx(scoped_file_url):
     )
 
     for ws in wb.worksheets:
-        header_row_number = None
-        header_row_values = None
+        rows = list(ws.iter_rows(values_only=True))
+
         candidates_by_variable = {variable_key: [] for variable_key in VARIABLES.keys()}
 
-        for row_number, row in enumerate(ws.iter_rows(values_only=True), start=1):
-            if row_number > 80:
+        for row_number, row in enumerate(rows, start=1):
+            if row_number > 120:
                 break
-
-            current_candidates = {variable_key: [] for variable_key in VARIABLES.keys()}
 
             for col_idx, cell_value in enumerate(row):
                 for variable_key in VARIABLES.keys():
                     priority = classify_header(cell_value, variable_key)
 
                     if priority is not None:
-                        current_candidates[variable_key].append(
-                            (col_idx, clean_text(cell_value), priority)
-                        )
-
-            if any(len(v) > 0 for v in current_candidates.values()):
-                header_row_number = row_number
-                header_row_values = row
-                candidates_by_variable = current_candidates
-                break
-
-        if header_row_number is None:
-            continue
-
-        client_col_indexes = find_client_name_columns(header_row_values)
+                        candidates_by_variable[variable_key].append({
+                            "header_row_number": row_number,
+                            "col_idx": col_idx,
+                            "header_name": clean_text(cell_value),
+                            "priority": priority
+                        })
 
         for variable_key in VARIABLES.keys():
             candidate_columns = candidates_by_variable.get(variable_key, [])
@@ -1366,49 +1399,68 @@ def extract_variables_from_xlsx(scoped_file_url):
             if not candidate_columns:
                 continue
 
-            selected_column = select_best_column(
-                ws,
-                header_row_number,
-                candidate_columns,
-                client_col_indexes
-            )
+            scored_candidates = []
 
-            if selected_column is None:
+            for candidate in candidate_columns:
+                header_row_number = candidate["header_row_number"]
+                col_idx = candidate["col_idx"]
+                header_name = candidate["header_name"]
+                priority = candidate["priority"]
+
+                raw_counter = Counter()
+
+                for row_number, row in enumerate(rows, start=1):
+                    if row_number <= header_row_number:
+                        continue
+
+                    if col_idx >= len(row):
+                        continue
+
+                    raw_value = clean_text(row[col_idx])
+
+                    if is_probably_invalid_value(raw_value):
+                        continue
+
+                    normalized_value = normalize_value_for_variable(variable_key, raw_value)
+
+                    if normalized_value is None:
+                        continue
+
+                    raw_counter[raw_value] += 1
+
+                valid_count = sum(raw_counter.values())
+
+                if valid_count > 0:
+                    scored_candidates.append({
+                        "header_row_number": header_row_number,
+                        "col_idx": col_idx,
+                        "header_name": header_name,
+                        "priority": priority,
+                        "valid_count": valid_count,
+                        "raw_counter": raw_counter
+                    })
+
+            if not scored_candidates:
                 continue
 
-            col_idx = selected_column["col_idx"]
-            header_name = selected_column["header_name"]
+            scored_candidates = sorted(
+                scored_candidates,
+                key=lambda x: (
+                    x["priority"],
+                    -x["valid_count"],
+                    x["header_row_number"],
+                    x["col_idx"]
+                )
+            )
 
-            raw_counter = Counter()
+            best_candidate = scored_candidates[0]
 
-            for row_number, row in enumerate(ws.iter_rows(values_only=True), start=1):
-                if row_number <= header_row_number:
-                    continue
-
-                if col_idx >= len(row):
-                    continue
-
-                if not row_matches_test_client(row, client_col_indexes):
-                    continue
-
-                raw_value = clean_text(row[col_idx])
-
-                if is_probably_invalid_value(raw_value):
-                    continue
-
-                normalized_value = normalize_value_for_variable(variable_key, raw_value)
-
-                if normalized_value is None:
-                    continue
-
-                raw_counter[raw_value] += 1
-
-            for raw_value, count_value in raw_counter.items():
+            for raw_value, count_value in best_candidate["raw_counter"].items():
                 extracted[variable_key].append({
                     "raw_value": raw_value,
                     "count": count_value,
                     "sheet_name": ws.title,
-                    "header_name": header_name
+                    "header_name": best_candidate["header_name"]
                 })
 
     return extracted
@@ -1789,8 +1841,37 @@ def run(session, STAGE_ROOT, MAX_FOLDERS, TARGET_FOLDER_KEYWORD):
 $$;
 
 
+DELETE FROM OPEN_MARKET_CONSTRUCTION_VARIABLE_EXTRACTION_V4
+WHERE ACCOUNT_FOLDER_NAME ILIKE '%FEMCO%';
+
 CALL RUN_OPEN_MARKET_PROPERTY_VARIABLE_EXTRACTION_V4(
     '@OPEN_MARKET_SUBMISSION/Open_Market',
     10,
     'FEMCO'
 );
+
+SELECT
+    ACCOUNT_FOLDER_NAME,
+    CONSTRUCTION_CODE,
+    RAW_CONSTRUCTION_TYPES,
+    WALL_MATERIAL_EXTERNAL_CLADDING,
+    RAW_WALL_MATERIAL_EXTERNAL_CLADDING,
+    ROOF_MATERIAL_COVERING,
+    RAW_ROOF_MATERIAL_COVERING,
+    SQUARE_FOOTAGE,
+    NUMBER_OF_STORIES,
+    NUMBER_OF_BUILDINGS_AT_LOCATION,
+    NUMBER_OF_BASEMENTS,
+    FOUNDATION_TYPE,
+    RAW_FOUNDATION_TYPE,
+    ROOF_ANCHOR,
+    RAW_ROOF_ANCHOR,
+    ROOF_GEOMETRY,
+    RAW_ROOF_GEOMETRY,
+    SOURCE_FILES,
+    FILES_FOUND,
+    FILES_PROCESSED,
+    FILES_SKIPPED,
+    PROCESSED_AT
+FROM OPEN_MARKET_CONSTRUCTION_VARIABLE_EXTRACTION_V4
+WHERE ACCOUNT_FOLDER_NAME ILIKE '%FEMCO%';
