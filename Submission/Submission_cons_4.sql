@@ -1,7 +1,7 @@
 USE DATABASE EXPERIMENT_TEAM_DB;
 USE SCHEMA PUBLIC;
 
-CREATE OR REPLACE TABLE OPEN_MARKET_PROPERTY_VARIABLE_EXTRACTION_V4 (
+CREATE OR REPLACE TABLE OPEN_MARKET_CONSTRUCTION_VARIABLE_EXTRACTION_V4 (
     ACCOUNT_FOLDER_NAME STRING,
 
     CONSTRUCTION_CODE VARIANT,
@@ -537,6 +537,16 @@ def escape_sql_string(value):
     return str(value).replace("'", "''")
 
 
+def json_sql_expr(value):
+    safe_json = json.dumps(value, ensure_ascii=False)
+    safe_json = safe_json.replace("$$", "$ $")
+    return "PARSE_JSON($$" + safe_json + "$$)"
+
+
+def counter_json_expr(counter_obj):
+    return json_sql_expr(dict(counter_obj))
+
+
 def is_probably_invalid_value(value):
     value = clean_text(value)
     if not value:
@@ -605,7 +615,7 @@ def get_extension(file_name):
 def get_already_processed_folders(session):
     rows = session.sql("""
         SELECT DISTINCT ACCOUNT_FOLDER_NAME
-        FROM OPEN_MARKET_PROPERTY_VARIABLE_EXTRACTION_V4
+        FROM OPEN_MARKET_CONSTRUCTION_VARIABLE_EXTRACTION_V4
     """).collect()
     return {row["ACCOUNT_FOLDER_NAME"] for row in rows}
 
@@ -1017,7 +1027,7 @@ def normalize_roof_geometry(raw_value):
     if key in ["UNKNOWN", "UNKNOWN/DEFAULT", "DEFAULT", "UNK"]:
         return "Unknown/default"
 
-    if key == "FLAT" or "FLAT ROOF" in key:
+    if key == "FLAT" or "FLAT ROOF" in key or "FLAT ROOF" in key:
         return "Flat"
 
     if "WITHOUT BRACING" in key:
@@ -1460,10 +1470,6 @@ def ai_extract_variables_from_file(session, stage_name, relative_path):
     return extracted, ai_error
 
 
-def counter_json(counter_obj):
-    return escape_sql_string(json.dumps(dict(counter_obj)))
-
-
 def run(session, STAGE_ROOT, MAX_FOLDERS):
     stage_name, relative_root = split_stage_root(STAGE_ROOT)
 
@@ -1609,7 +1615,7 @@ def run(session, STAGE_ROOT, MAX_FOLDERS):
                 })
 
         insert_sql = f"""
-            INSERT INTO OPEN_MARKET_PROPERTY_VARIABLE_EXTRACTION_V4 (
+            INSERT INTO OPEN_MARKET_CONSTRUCTION_VARIABLE_EXTRACTION_V4 (
                 ACCOUNT_FOLDER_NAME,
 
                 CONSTRUCTION_CODE,
@@ -1647,36 +1653,36 @@ def run(session, STAGE_ROOT, MAX_FOLDERS):
             SELECT
                 '{escape_sql_string(folder_name)}',
 
-                PARSE_JSON('{counter_json(counters["CONSTRUCTION_CODE"])}'),
-                PARSE_JSON('{escape_sql_string(json.dumps(dict(raw_construction_counter)))}'),
-                PARSE_JSON('{escape_sql_string(json.dumps(raw_to_normalized_mapping))}'),
+                {counter_json_expr(counters["CONSTRUCTION_CODE"])},
+                {json_sql_expr(dict(raw_construction_counter))},
+                {json_sql_expr(raw_to_normalized_mapping)},
 
-                PARSE_JSON('{counter_json(counters["YEAR_BUILT"])}'),
-                PARSE_JSON('{counter_json(counters["YEAR_OF_LAST_MAJOR_RENOVATION"])}'),
-                PARSE_JSON('{counter_json(counters["SQUARE_FOOTAGE"])}'),
-                PARSE_JSON('{counter_json(counters["NUMBER_OF_STORIES"])}'),
-                PARSE_JSON('{counter_json(counters["NUMBER_OF_BASEMENTS"])}'),
-                PARSE_JSON('{counter_json(counters["NUMBER_OF_BUILDINGS_AT_LOCATION"])}'),
+                {counter_json_expr(counters["YEAR_BUILT"])},
+                {counter_json_expr(counters["YEAR_OF_LAST_MAJOR_RENOVATION"])},
+                {counter_json_expr(counters["SQUARE_FOOTAGE"])},
+                {counter_json_expr(counters["NUMBER_OF_STORIES"])},
+                {counter_json_expr(counters["NUMBER_OF_BASEMENTS"])},
+                {counter_json_expr(counters["NUMBER_OF_BUILDINGS_AT_LOCATION"])},
 
-                PARSE_JSON('{counter_json(counters["WALL_MATERIAL_EXTERNAL_CLADDING"])}'),
-                PARSE_JSON('{counter_json(raw_counters["WALL_MATERIAL_EXTERNAL_CLADDING"])}'),
+                {counter_json_expr(counters["WALL_MATERIAL_EXTERNAL_CLADDING"])},
+                {counter_json_expr(raw_counters["WALL_MATERIAL_EXTERNAL_CLADDING"])},
 
-                PARSE_JSON('{counter_json(counters["ROOF_MATERIAL_COVERING"])}'),
-                PARSE_JSON('{counter_json(raw_counters["ROOF_MATERIAL_COVERING"])}'),
+                {counter_json_expr(counters["ROOF_MATERIAL_COVERING"])},
+                {counter_json_expr(raw_counters["ROOF_MATERIAL_COVERING"])},
 
-                PARSE_JSON('{counter_json(counters["FOUNDATION_TYPE"])}'),
-                PARSE_JSON('{counter_json(raw_counters["FOUNDATION_TYPE"])}'),
+                {counter_json_expr(counters["FOUNDATION_TYPE"])},
+                {counter_json_expr(raw_counters["FOUNDATION_TYPE"])},
 
-                PARSE_JSON('{counter_json(counters["ROOF_ANCHOR"])}'),
-                PARSE_JSON('{counter_json(raw_counters["ROOF_ANCHOR"])}'),
+                {counter_json_expr(counters["ROOF_ANCHOR"])},
+                {counter_json_expr(raw_counters["ROOF_ANCHOR"])},
 
-                PARSE_JSON('{counter_json(counters["ROOF_GEOMETRY"])}'),
-                PARSE_JSON('{counter_json(raw_counters["ROOF_GEOMETRY"])}'),
+                {counter_json_expr(counters["ROOF_GEOMETRY"])},
+                {counter_json_expr(raw_counters["ROOF_GEOMETRY"])},
 
-                PARSE_JSON('{escape_sql_string(json.dumps(sorted(list(source_files))))}'),
+                {json_sql_expr(sorted(list(source_files)))},
                 {files_found},
                 {files_processed},
-                PARSE_JSON('{escape_sql_string(json.dumps(skipped_files))}'),
+                {json_sql_expr(skipped_files)},
                 CURRENT_TIMESTAMP()
         """
 
@@ -1686,7 +1692,7 @@ def run(session, STAGE_ROOT, MAX_FOLDERS):
         total_files_processed += files_processed
 
     return (
-        f"Completed property variable extraction V4. "
+        f"Completed construction/property variable extraction V4. "
         f"New folders processed in this run: {processed_folder_count}. "
         f"Files processed in this run: {total_files_processed}. "
         f"Folders already present in V4 output table and skipped: {len(already_processed_folders)}. "
