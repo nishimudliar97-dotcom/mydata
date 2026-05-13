@@ -407,18 +407,21 @@ CONSTRUCTION_EXACT_NORMALIZATION_MAP = {
     "CLASS 0": "Unknown",
     "UNKNOWN": "Unknown",
     "UNKNOWN/DEFAULT": "Unknown",
+
     "1": "Frame",
     "CLASS 1": "Frame",
     "FRAME": "Frame",
     "WOOD": "Frame",
     "WOOD FRAME": "Frame",
     "5 STORY WRAP": "Frame",
+
     "2": "Joisted Masonry",
     "CLASS 2": "Joisted Masonry",
     "JM": "Joisted Masonry",
     "JOISTED MASONRY": "Joisted Masonry",
     "MASONRY/JOISTED": "Joisted Masonry",
     "MASONRY / JOISTED": "Joisted Masonry",
+
     "3": "Non-Combustible",
     "CLASS 3": "Non-Combustible",
     "NON COMBUSTIBLE": "Non-Combustible",
@@ -430,6 +433,7 @@ CONSTRUCTION_EXACT_NORMALIZATION_MAP = {
     "PRE-ENGINEERED": "Non-Combustible",
     "PRE ENGINEERED": "Non-Combustible",
     "PROTECTED STEEL": "Non-Combustible",
+
     "4": "Masonry Non-Combustible",
     "CLASS 4": "Masonry Non-Combustible",
     "MNC": "Masonry Non-Combustible",
@@ -450,6 +454,7 @@ CONSTRUCTION_EXACT_NORMALIZATION_MAP = {
     "CONCRETE BLOCK STUCCO": "Masonry Non-Combustible",
     "MASONRY WITH STUCCO": "Masonry Non-Combustible",
     "BRICK": "Masonry Non-Combustible",
+
     "5": "Modified Fire Resistive",
     "CLASS 5": "Modified Fire Resistive",
     "CONCRETE": "Modified Fire Resistive",
@@ -458,18 +463,22 @@ CONSTRUCTION_EXACT_NORMALIZATION_MAP = {
     "CONCRETE PODIUM WITH BRICK": "Modified Fire Resistive",
     "STEEL FRAME/CONCRETE": "Modified Fire Resistive",
     "MODIFIED FIRE RESISTIVE": "Modified Fire Resistive",
+
     "6": "Fire Resistive",
     "CLASS 6": "Fire Resistive",
     "FIRE RESISTIVE": "Fire Resistive",
     "REINFORCED CONC": "Fire Resistive",
     "REINFORCED CONC.": "Fire Resistive",
+
     "7": "Heavy Timber Joisted Masonry",
     "CLASS 7": "Heavy Timber Joisted Masonry",
     "HEAVY TIMBER JOISTED MASONRY": "Heavy Timber Joisted Masonry",
+
     "8": "Superior Non-Combustible",
     "CLASS 8": "Superior Non-Combustible",
     "SUPERIOR NON-COMBUSTIBLE": "Superior Non-Combustible",
     "SUPERIOR NON COMBUSTIBLE": "Superior Non-Combustible",
+
     "9": "Superior Masonry Non-Combustible",
     "CLASS 9": "Superior Masonry Non-Combustible",
     "SUPERIOR MASONRY NON-COMBUSTIBLE": "Superior Masonry Non-Combustible",
@@ -529,10 +538,46 @@ def escape_sql_string(value):
     return str(value).replace("'", "''")
 
 
+def make_json_safe(value):
+    if isinstance(value, dict):
+        return {str(k): make_json_safe(v) for k, v in value.items()}
+
+    if isinstance(value, list):
+        return [make_json_safe(v) for v in value]
+
+    if isinstance(value, tuple):
+        return [make_json_safe(v) for v in value]
+
+    if value is None:
+        return None
+
+    if isinstance(value, bool):
+        return value
+
+    if isinstance(value, int):
+        return value
+
+    if isinstance(value, float):
+        return value
+
+    value = str(value)
+    value = value.replace("\\", "/")
+    value = value.replace("\r", " ")
+    value = value.replace("\n", " ")
+    value = value.replace("\t", " ")
+    value = re.sub(r"\s+", " ", value).strip()
+
+    if len(value) > 700:
+        value = value[:700]
+
+    return value
+
+
 def json_sql_expr(value):
-    safe_json = json.dumps(value, ensure_ascii=False)
+    safe_value = make_json_safe(value)
+    safe_json = json.dumps(safe_value, ensure_ascii=False)
     safe_json = escape_sql_string(safe_json)
-    return "PARSE_JSON('" + safe_json + "')"
+    return "TRY_PARSE_JSON('" + safe_json + "')"
 
 
 def counter_json_expr(counter_obj):
@@ -543,7 +588,16 @@ def is_probably_invalid_value(value):
     value = clean_text(value)
     if not value:
         return True
-    invalid_values = {"N/A", "NA", "NULL", "NONE", "-", "--", "TBD", "UNKNOWN VALUE"}
+    invalid_values = {
+        "N/A",
+        "NA",
+        "NULL",
+        "NONE",
+        "-",
+        "--",
+        "TBD",
+        "UNKNOWN VALUE"
+    }
     return value.upper() in invalid_values
 
 
@@ -753,44 +807,70 @@ def normalize_construction_type(raw_value):
 
     if "MASONRY/JOISTED" in key or "JOISTED/MASONRY" in key:
         return "Joisted Masonry"
+
     if "WOOD" in key and "FRAME" in key:
         return "Frame"
+
     if key == "WOOD" or key == "FRAME":
         return "Frame"
+
     if "JOISTED MASONRY" in key:
         return "Joisted Masonry"
+
     if "HEAVY TIMBER" in key:
         return "Heavy Timber Joisted Masonry"
+
     if "FIRE RESISTIVE" in key and "MODIFIED" in key:
         return "Modified Fire Resistive"
+
     if "FIRE RESISTIVE" in key:
         return "Fire Resistive"
+
     if "REINFORCED CONC" in key:
         return "Fire Resistive"
+
     if "SUPERIOR" in key and "MASONRY" in key and "NON" in key and "COMBUST" in key:
         return "Superior Masonry Non-Combustible"
+
     if "SUPERIOR" in key and "NON" in key and "COMBUST" in key:
         return "Superior Non-Combustible"
+
     if "NON" in key and "COMBUST" in key and "MASONRY" in key:
         return "Masonry Non-Combustible"
+
     if "NON" in key and "COMBUST" in key:
         return "Non-Combustible"
+
     if "PRE-ENGINEERED" in key or "PRE ENGINEERED" in key:
         return "Non-Combustible"
+
     if "PROTECTED STEEL" in key:
         return "Non-Combustible"
+
     if "REINFORCED CONCRETE" in key:
         return "Modified Fire Resistive"
 
     if any(token in key for token in [
-        "CMU", "MASONRY", "BRICK", "BLOCK", "ADOBE", "CONFINED MASONRY",
-        "REINFORCED MASONRY", "TILT WALL", "TILT-WALL", "TILT UP", "TILT-UP",
-        "CONCRETE TILT", "CB-TILT", "CB TILT"
+        "CMU",
+        "MASONRY",
+        "BRICK",
+        "BLOCK",
+        "ADOBE",
+        "CONFINED MASONRY",
+        "REINFORCED MASONRY",
+        "TILT WALL",
+        "TILT-WALL",
+        "TILT UP",
+        "TILT-UP",
+        "CONCRETE TILT",
+        "CB-TILT",
+        "CB TILT"
     ]):
         return "Masonry Non-Combustible"
 
     if "CONCRETE" in key or "STEEL FRAME" in key:
         return "Modified Fire Resistive"
+
     if "METAL" in key or key == "STEEL":
         return "Non-Combustible"
 
@@ -801,30 +881,43 @@ def normalize_wall_material_external_cladding(raw_value):
     key = canonical_key(strip_code_prefix(raw_value) or raw_value)
     if not key:
         return None
+
     if key in ["UNKNOWN", "UNKNOWN/DEFAULT", "DEFAULT", "UNK"]:
         return "Unknown/default"
+
     if "BRICK VENEER" in key:
         return "Brick/unreinforced masonry"
+
     if "BRICK" in key and "REINFORCED" not in key:
         return "Brick/unreinforced masonry"
+
     if "UNREINFORCED MASONRY" in key:
         return "Brick/unreinforced masonry"
+
     if "REINFORCED MASONRY" in key:
         return "Reinforced masonry"
+
     if "PLYWOOD" in key:
         return "Plywood"
+
     if "WOOD PLANK" in key:
         return "Wood planks"
+
     if "PARTICLE" in key or "OSB" in key:
         return "Particle board/OSB"
+
     if "METAL PANEL" in key or key == "METAL":
         return "Metal panels"
+
     if "PRE-CAST" in key or "PRECAST" in key:
         return "Pre-cast concrete elements"
+
     if "CAST-IN-PLACE" in key or "CAST IN PLACE" in key:
         return "Cast-in-place concrete"
+
     if "GYPSUM" in key:
         return "Gypsum board"
+
     return None
 
 
@@ -832,36 +925,49 @@ def normalize_roof_material_covering(raw_value):
     key = canonical_key(strip_code_prefix(raw_value) or raw_value)
     if not key:
         return None
+
     if key in ["UNKNOWN", "UNKNOWN/DEFAULT", "DEFAULT", "UNK"]:
         return "Unknown/default"
+
     if "ASPHALT" in key and "SHINGLE" in key:
         return "Asphalt shingles"
+
     if "WOOD" in key and "SHINGLE" in key:
         return "Wooden shingles"
+
     if "CLAY" in key and ("CONCRETE" in key or "TILE" in key):
         return "Clay/concrete tiles"
+
     if "CONCRETE" in key and "TILE" in key:
         return "Clay/concrete tiles"
+
     if "LIGHT METAL" in key or "METAL PANEL" in key:
         return "Light metal panels"
+
     if "SLATE" in key:
         return "Slate"
+
     if "BUILT-UP" in key or "BUILT UP" in key:
         if "WITHOUT" in key or "NO GRAVEL" in key:
             return "Built-up roof without gravel"
         if "GRAVEL" in key:
             return "Built-up roof with gravel"
         return "Built-up roof with gravel"
+
     if "SINGLE PLY" in key or "SINGLE-PLY" in key:
         if "BALLAST" in key:
             return "Single ply membrane ballasted"
         return "Single ply membrane"
+
     if "STANDING SEAM" in key:
         return "Standing seam metal roofs"
+
     if "HURRICANE" in key and "ROOF" in key:
         return "Hurricane Wind-Rated Roof Coverings"
+
     if key == "COMP" or "COMPOSITION" in key:
         return "Asphalt shingles"
+
     return None
 
 
@@ -869,28 +975,40 @@ def normalize_foundation_type(raw_value):
     key = canonical_key(strip_code_prefix(raw_value) or raw_value)
     if not key:
         return None
+
     if key in ["UNKNOWN", "UNKNOWN/DEFAULT", "DEFAULT", "UNK"]:
         return "Unknown/default"
+
     if "NO BASEMENT" in key:
         return "No basement"
+
     if "ENGINEERING FOUNDATION" in key or "ENGINEERED FOUNDATION" in key:
         return "Engineering foundation"
+
     if "CONCRETE BASEMENT" in key:
         return "Concrete basement"
+
     if "MAT" in key and "SLAB" in key:
         return "Mat / slab"
+
     if key == "SLAB" or "SLAB" in key:
         return "Mat / slab"
+
     if "FOOTING" in key:
         return "Footing"
+
     if "POST" in key and "PIER" in key:
         return "Post & pier"
+
     if key == "PIER":
         return "Post & pier"
+
     if "PILE" in key:
         return "Pile"
+
     if "MASONRY BASEMENT" in key:
         return "Masonry basement"
+
     return None
 
 
@@ -898,22 +1016,31 @@ def normalize_roof_anchor(raw_value):
     key = canonical_key(strip_code_prefix(raw_value) or raw_value)
     if not key:
         return None
+
     if key in ["UNKNOWN", "UNKNOWN/DEFAULT", "DEFAULT", "UNK"]:
         return "Unknown/default"
+
     if "STRUCTURALLY CONNECTED" in key or key == "STRUCTURAL" or "STRUCTURAL" in key:
         return "Structurally Connected"
+
     if "NAIL" in key or "SCREW" in key:
         return "Nails/Screws"
+
     if "HURRICANE TIE" in key:
         return "Hurricane Ties"
+
     if "GRAVITY" in key or "FRICTION" in key:
         return "Gravity/friction"
+
     if "CLIP" in key:
         return "Clips"
+
     if "ANCHOR BOLT" in key:
         return "Anchor bolts"
+
     if "ADHESIVE" in key or "EPOXY" in key:
         return "Adhesive epoxy"
+
     return None
 
 
@@ -921,26 +1048,37 @@ def normalize_roof_geometry(raw_value):
     key = canonical_key(strip_code_prefix(raw_value) or raw_value)
     if not key:
         return None
+
     if key in ["UNKNOWN", "UNKNOWN/DEFAULT", "DEFAULT", "UNK"]:
         return "Unknown/default"
+
     if key == "FLAT" or "FLAT ROOF" in key:
         return "Flat"
+
     if "WITHOUT BRACING" in key:
         return "Gable end without bracing"
+
     if "WITH BRACING" in key:
         return "Gable end with bracing"
+
     if "GABLE" in key:
         return "Gable end with bracing"
+
     if key == "HIP" or "HIP ROOF" in key:
         return "Hip"
+
     if key == "SHED" or "SHED ROOF" in key:
         return "Shed"
+
     if "BUTTERFLY" in key:
         return "Butterfly"
+
     if "MANSARD" in key:
         return "Mansard"
+
     if "STEPPED" in key:
         return "Stepped"
+
     return None
 
 
@@ -948,12 +1086,19 @@ def normalize_number_string(value):
     value = clean_text(value)
     if not value:
         return None
-    value = value.replace(",", "").replace("$", "").strip()
+
+    value = value.replace(",", "")
+    value = value.replace("$", "")
+    value = value.strip()
+
     match = re.search(r'-?\d+(\.\d+)?', value)
     if not match:
         return None
+
+    number_text = match.group(0)
+
     try:
-        number_value = float(match.group(0))
+        number_value = float(number_text)
         if number_value.is_integer():
             return str(int(number_value))
         return str(number_value)
@@ -990,19 +1135,24 @@ def normalize_positive_integer(value, allow_zero=False, max_value=None):
     number_text = normalize_number_string(value)
     if not number_text:
         return None
+
     try:
         number_value = float(number_text)
         if not number_value.is_integer():
             return None
+
         number_value = int(number_value)
+
         if allow_zero:
             if number_value < 0:
                 return None
         else:
             if number_value <= 0:
                 return None
+
         if max_value is not None and number_value > max_value:
             return None
+
         return str(number_value)
     except Exception:
         return None
@@ -1012,6 +1162,7 @@ def normalize_square_footage(value):
     number_text = normalize_number_string(value)
     if not number_text:
         return None
+
     try:
         number_value = float(number_text)
         if number_value <= 0:
@@ -1026,37 +1177,51 @@ def normalize_square_footage(value):
 def normalize_value_for_variable(variable_key, raw_value):
     if variable_key == "CONSTRUCTION_CODE":
         return normalize_construction_type(raw_value)
+
     if variable_key == "YEAR_BUILT":
         return normalize_year(raw_value)
+
     if variable_key == "YEAR_OF_LAST_MAJOR_RENOVATION":
         return normalize_year(raw_value)
+
     if variable_key == "SQUARE_FOOTAGE":
         return normalize_square_footage(raw_value)
+
     if variable_key == "NUMBER_OF_STORIES":
         return normalize_positive_integer(raw_value, allow_zero=False, max_value=200)
+
     if variable_key == "NUMBER_OF_BASEMENTS":
         return normalize_positive_integer(raw_value, allow_zero=True, max_value=20)
+
     if variable_key == "NUMBER_OF_BUILDINGS_AT_LOCATION":
         return normalize_positive_integer(raw_value, allow_zero=False, max_value=100000)
+
     if variable_key == "WALL_MATERIAL_EXTERNAL_CLADDING":
         return normalize_wall_material_external_cladding(raw_value)
+
     if variable_key == "ROOF_MATERIAL_COVERING":
         return normalize_roof_material_covering(raw_value)
+
     if variable_key == "FOUNDATION_TYPE":
         return normalize_foundation_type(raw_value)
+
     if variable_key == "ROOF_ANCHOR":
         return normalize_roof_anchor(raw_value)
+
     if variable_key == "ROOF_GEOMETRY":
         return normalize_roof_geometry(raw_value)
+
     return clean_text(raw_value)
 
 
 def add_value(variable_key, raw_value, counters, raw_counters, raw_construction_counter, raw_to_normalized_mapping, count_value=1):
     raw_value = clean_text(raw_value)
+
     if is_probably_invalid_value(raw_value):
         return
 
     normalized_value = normalize_value_for_variable(variable_key, raw_value)
+
     if normalized_value is None:
         return
 
@@ -1080,10 +1245,14 @@ def row_matches_test_client(row, client_col_indexes):
     for col_idx in client_col_indexes:
         if col_idx >= len(row):
             continue
+
         value = clean_text(row[col_idx])
+
         if not value:
             continue
+
         value_upper = value.upper()
+
         for keyword in TEST_CLIENT_NAME_KEYWORDS:
             if keyword in value_upper:
                 return True
@@ -1093,14 +1262,17 @@ def row_matches_test_client(row, client_col_indexes):
 
 def find_client_name_columns(header_row):
     client_cols = []
+
     for col_idx, cell_value in enumerate(header_row):
         h = normalize_header(cell_value)
+
         if h in ["client name", "insured name", "account name", "named insured", "client"]:
             client_cols.append(col_idx)
         elif "client" in h and "name" in h:
             client_cols.append(col_idx)
         elif "insured" in h and "name" in h:
             client_cols.append(col_idx)
+
     return client_cols
 
 
@@ -1114,11 +1286,15 @@ def select_best_column(ws, header_row_number, candidate_columns, client_col_inde
         for row_number, row in enumerate(data_rows, start=1):
             if row_number <= header_row_number:
                 continue
+
             if col_idx >= len(row):
                 continue
+
             if not row_matches_test_client(row, client_col_indexes):
                 continue
+
             value = clean_text(row[col_idx])
+
             if not is_probably_invalid_value(value):
                 non_empty_count += 1
 
@@ -1147,7 +1323,11 @@ def extract_variables_from_xlsx(scoped_file_url):
     with SnowflakeFile.open(scoped_file_url, "rb") as f:
         data = f.read()
 
-    wb = load_workbook(io.BytesIO(data), read_only=True, data_only=True)
+    wb = load_workbook(
+        io.BytesIO(data),
+        read_only=True,
+        data_only=True
+    )
 
     for ws in wb.worksheets:
         header_row_number = None
@@ -1163,8 +1343,11 @@ def extract_variables_from_xlsx(scoped_file_url):
             for col_idx, cell_value in enumerate(row):
                 for variable_key in VARIABLES.keys():
                     priority = classify_header(cell_value, variable_key)
+
                     if priority is not None:
-                        current_candidates[variable_key].append((col_idx, clean_text(cell_value), priority))
+                        current_candidates[variable_key].append(
+                            (col_idx, clean_text(cell_value), priority)
+                        )
 
             if any(len(v) > 0 for v in current_candidates.values()):
                 header_row_number = row_number
@@ -1183,7 +1366,12 @@ def extract_variables_from_xlsx(scoped_file_url):
             if not candidate_columns:
                 continue
 
-            selected_column = select_best_column(ws, header_row_number, candidate_columns, client_col_indexes)
+            selected_column = select_best_column(
+                ws,
+                header_row_number,
+                candidate_columns,
+                client_col_indexes
+            )
 
             if selected_column is None:
                 continue
@@ -1196,8 +1384,10 @@ def extract_variables_from_xlsx(scoped_file_url):
             for row_number, row in enumerate(ws.iter_rows(values_only=True), start=1):
                 if row_number <= header_row_number:
                     continue
+
                 if col_idx >= len(row):
                     continue
+
                 if not row_matches_test_client(row, client_col_indexes):
                     continue
 
@@ -1268,8 +1458,10 @@ def build_ai_response_format():
 def evidence_has_required_context(variable_key, evidence_text):
     if not evidence_text:
         return False
+
     evidence_lower = evidence_text.lower()
     markers = VARIABLES[variable_key]["context_markers"]
+
     return any(marker in evidence_lower for marker in markers)
 
 
@@ -1335,21 +1527,28 @@ def ai_extract_variables_from_file(session, stage_name, relative_path):
 
 def build_target_keywords(target_folder_keyword):
     value = clean_text(target_folder_keyword)
+
     if not value:
         return []
+
     parts = re.split(r'[,|;]', value)
     keywords = []
+
     for part in parts:
         part = clean_text(part)
+
         if part:
             keywords.append(part.upper())
+
     return keywords
 
 
 def folder_matches_target(folder_name, target_keywords):
     if not target_keywords:
         return True
+
     folder_upper = folder_name.upper()
+
     return any(keyword in folder_upper for keyword in target_keywords)
 
 
@@ -1398,8 +1597,16 @@ def run(session, STAGE_ROOT, MAX_FOLDERS, TARGET_FOLDER_KEYWORD):
     else:
         folder_names_to_process = candidate_folder_names
 
-    supported_ai_extract_extensions = {".pdf", ".doc", ".docx", ".eml"}
-    xlsx_extensions = {".xlsx"}
+    supported_ai_extract_extensions = {
+        ".pdf",
+        ".doc",
+        ".docx",
+        ".eml"
+    }
+
+    xlsx_extensions = {
+        ".xlsx"
+    }
 
     processed_folder_count = 0
     total_files_processed = 0
@@ -1587,5 +1794,3 @@ CALL RUN_OPEN_MARKET_PROPERTY_VARIABLE_EXTRACTION_V4(
     10,
     'FEMCO'
 );
-
-
