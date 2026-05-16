@@ -70,6 +70,30 @@ MONTH_MAP = {
 }
 
 
+def clean_number(value):
+    if value is None:
+        return None
+
+    text = str(value).strip()
+
+    if text == '' or text.lower() in ('none', 'null', 'nan'):
+        return None
+
+    try:
+        return float(text)
+    except Exception:
+        return None
+
+
+def clean_int(value):
+    number = clean_number(value)
+
+    if number is None:
+        return None
+
+    return int(round(number))
+
+
 def normalize_stage_relative_path(raw_name):
     if raw_name is None:
         return None
@@ -388,8 +412,6 @@ def find_count_col(headers, amount_idx):
             if keyword in value and not is_bad_count_header(value):
                 return i
 
-    # Tables like: Period | No. | Paid GBP | No. | Outstanding GBP | No. | Total GBP
-    # For the selected amount column, use the nearest "No." column immediately before it.
     if amount_idx is not None:
         for i in range(amount_idx - 1, -1, -1):
             value = lowered[i].strip()
@@ -725,7 +747,6 @@ def parse_ai_result(result):
         claim_count = parse_int(raw.get("claim_count"))
 
         if claim_count is not None:
-            # Prevent the bad case where AI puts year/date into count.
             if claim_count == loss_year or claim_count > 10000:
                 claim_count = None
 
@@ -795,8 +816,6 @@ def score_non_excel_file_base(file_info):
 
 
 def score_non_excel_file_content(session, file_info, base_score):
-    # Content-based scoring for DOCX/PDF/EML.
-    # We use the same AI extraction call as a probe. If it finds rows, score becomes high.
     try:
         rows = parse_ai_result(call_ai_extract_for_file(session, file_info["file_path"]))
 
@@ -853,14 +872,23 @@ def insert_file_selection(session, run_id, file_info, score, content_found, sele
 
 
 def insert_loss_row(session, run_id, account_folder, file_info, row):
-    if row.get("loss_year") is None:
+    loss_year = clean_int(row.get("loss_year"))
+    claim_count = clean_number(row.get("claim_count"))
+    loss_amount = clean_number(row.get("loss_amount"))
+
+    if loss_year is None:
         return False
 
-    if row.get("loss_amount") is None:
+    if loss_amount is None:
         return False
+
+    include_value = row.get("include_in_aggregation")
+
+    if include_value is None:
+        include_value = True
 
     if is_total_or_subtotal_text(row.get("source_row_text")):
-        row["include_in_aggregation"] = False
+        include_value = False
 
     query = f"""
         INSERT INTO {EXTRACTION_TABLE} (
@@ -891,16 +919,16 @@ def insert_loss_row(session, run_id, account_folder, file_info, row):
         file_info["file_name"],
         file_info["file_path"],
         file_info["extension"],
-        row.get("loss_year"),
+        loss_year,
         row.get("period_text"),
         row.get("loss_date"),
-        row.get("claim_count"),
-        row.get("loss_amount"),
+        claim_count,
+        loss_amount,
         row.get("currency") or 'UNKNOWN',
         row.get("amount_type"),
         row.get("source_sheet_name"),
         row.get("source_row_text"),
-        row.get("include_in_aggregation"),
+        include_value,
         row.get("confidence"),
         row.get("extraction_reason")
     ]).collect()
@@ -918,18 +946,30 @@ def aggregate_account(session, run_id, account_folder, as_of_year):
 
     query = f"""
         SELECT
-            MIN(LOSS_YEAR),
-            MAX(LOSS_YEAR),
-            COUNT(DISTINCT LOSS_YEAR),
-            SUM(COALESCE(CLAIM_COUNT, 0)),
-            SUM(COALESCE(LOSS_AMOUNT, 0)),
-            SUM(CASE WHEN LOSS_YEAR BETWEEN ? AND ? THEN COALESCE(CLAIM_COUNT, 0) ELSE 0 END),
-            SUM(CASE WHEN LOSS_YEAR BETWEEN ? AND ? THEN COALESCE(LOSS_AMOUNT, 0) ELSE 0 END)
+            MIN(TRY_TO_NUMBER(LOSS_YEAR)) AS MIN_LOSS_YEAR,
+            MAX(TRY_TO_NUMBER(LOSS_YEAR)) AS MAX_LOSS_YEAR,
+            COUNT(DISTINCT TRY_TO_NUMBER(LOSS_YEAR)) AS AVAILABLE_LOSS_YEAR_COUNT,
+            SUM(COALESCE(TRY_TO_DOUBLE(CLAIM_COUNT), 0)) AS TOTAL_AVAILABLE_CLAIM_COUNT,
+            SUM(COALESCE(TRY_TO_DOUBLE(LOSS_AMOUNT), 0)) AS TOTAL_AVAILABLE_LOSS_AMOUNT,
+            SUM(
+                CASE
+                    WHEN TRY_TO_NUMBER(LOSS_YEAR) BETWEEN ? AND ?
+                    THEN COALESCE(TRY_TO_DOUBLE(CLAIM_COUNT), 0)
+                    ELSE 0
+                END
+            ) AS LAST_10_YEAR_CLAIM_COUNT,
+            SUM(
+                CASE
+                    WHEN TRY_TO_NUMBER(LOSS_YEAR) BETWEEN ? AND ?
+                    THEN COALESCE(TRY_TO_DOUBLE(LOSS_AMOUNT), 0)
+                    ELSE 0
+                END
+            ) AS LAST_10_YEAR_LOSS_AMOUNT
         FROM {EXTRACTION_TABLE}
         WHERE RUN_ID = ?
           AND ACCOUNT_FOLDER = ?
           AND INCLUDE_IN_AGGREGATION = TRUE
-          AND LOSS_YEAR IS NOT NULL
+          AND TRY_TO_NUMBER(LOSS_YEAR) IS NOT NULL
     """
 
     result = session.sql(query, params=[
@@ -957,13 +997,13 @@ def aggregate_account(session, run_id, account_folder, as_of_year):
     currency_rows = session.sql(currency_query, params=[run_id, account_folder]).collect()
     currency = currency_rows[0][0] if currency_rows else 'UNKNOWN'
 
-    min_year = result[0]
-    max_year = result[1]
-    available_year_count = result[2]
-    total_claim_count = result[3]
-    total_loss_amount = result[4]
-    last_10_claim_count = result[5]
-    last_10_loss_amount = result[6]
+    min_year = clean_int(result[0])
+    max_year = clean_int(result[1])
+    available_year_count = clean_int(result[2])
+    total_claim_count = clean_number(result[3])
+    total_loss_amount = clean_number(result[4])
+    last_10_claim_count = clean_number(result[5])
+    last_10_loss_amount = clean_number(result[6])
 
     if available_year_count is None or available_year_count == 0:
         quality = 'NO_USABLE_LOSS_ROWS'
@@ -1106,8 +1146,6 @@ def run(session, max_accounts, account_name_filter, as_of_year, force_reprocess)
                 else:
                     base_score = score_non_excel_file_base(file_info)
 
-                    # Probe likely useful non-Excel documents. This fixes DOCX/PDF cases
-                    # where the filename does not say "loss" but page content has loss history.
                     should_probe = (
                         base_score > 0
                         or file_info["extension"] in {'.docx', '.doc', '.pdf', '.eml'}
@@ -1142,16 +1180,13 @@ def run(session, max_accounts, account_name_filter, as_of_year, force_reprocess)
 
         inserted_for_account = 0
         selected_file_path = None
-        successful_file = None
 
-        # Try files in score order until one actually gives rows.
         for idx, item in enumerate(scored_files[:10], start=1):
             file_info = item["file_info"]
 
             if item["score"] <= 0:
                 continue
 
-            attempted = True
             row_count = 0
 
             try:
@@ -1166,29 +1201,14 @@ def run(session, max_accounts, account_name_filter, as_of_year, force_reprocess)
                     if insert_loss_row(session, run_id, account_folder, file_info, row):
                         row_count += 1
 
-                session.sql(
-                    f"""
-                    UPDATE {FILE_SELECTION_TABLE}
-                    SET ATTEMPTED_EXTRACTION = TRUE,
-                        EXTRACTION_ROW_COUNT = ?,
-                        PARSE_STATUS = 'ATTEMPTED'
-                    WHERE RUN_ID = ?
-                      AND ACCOUNT_FOLDER = ?
-                      AND FILE_PATH = ?
-                    """,
-                    params=[row_count, run_id, account_folder, file_info["file_path"]]
-                ).collect()
-
                 if row_count > 0:
                     inserted_for_account = row_count
                     selected_file_path = file_info["file_path"]
-                    successful_file = file_info
                     break
 
             except Exception as e:
                 item["error"] = str(e)
 
-        # Insert file-selection audit rows after attempt result is known.
         for idx, item in enumerate(scored_files, start=1):
             file_info = item["file_info"]
             selected = selected_file_path == file_info["file_path"]
@@ -1221,12 +1241,18 @@ def run(session, max_accounts, account_name_filter, as_of_year, force_reprocess)
             )
 
         if inserted_for_account > 0:
-            aggregate_account(session, run_id, account_folder, as_of_year)
-            mark_processed(session, account_folder, run_id, 'SUCCESS', None)
+            try:
+                aggregate_account(session, run_id, account_folder, as_of_year)
+                mark_processed(session, account_folder, run_id, 'SUCCESS', None)
 
-            processed_accounts += 1
-            selected_files_count += 1
-            extracted_rows_count += inserted_for_account
+                processed_accounts += 1
+                selected_files_count += 1
+                extracted_rows_count += inserted_for_account
+
+            except Exception as e:
+                error_message = f"Aggregation error: {str(e)}"
+                mark_processed(session, account_folder, run_id, 'ERROR', error_message)
+                errors.append(f"{account_folder}: {error_message}")
 
         else:
             error_message = 'No candidate file produced usable loss-history rows.'
