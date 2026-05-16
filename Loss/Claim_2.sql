@@ -1,4 +1,4 @@
-CREATE OR REPLACE TABLE OPEN_MARKET_LOSS_FILE_SELECTION_5 (
+CREATE OR REPLACE TABLE OPEN_MARKET_LOSS_FILE_SELECTION_6 (
     RUN_ID STRING,
     ACCOUNT_FOLDER STRING,
     FILE_NAME STRING,
@@ -16,7 +16,7 @@ CREATE OR REPLACE TABLE OPEN_MARKET_LOSS_FILE_SELECTION_5 (
     CREATED_AT TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
 );
 
-CREATE OR REPLACE TABLE OPEN_MARKET_LOSS_HISTORY_EXTRACTION_5 (
+CREATE OR REPLACE TABLE OPEN_MARKET_LOSS_HISTORY_EXTRACTION_6 (
     RUN_ID STRING,
     ACCOUNT_FOLDER STRING,
     SOURCE_FILE_NAME STRING,
@@ -37,7 +37,7 @@ CREATE OR REPLACE TABLE OPEN_MARKET_LOSS_HISTORY_EXTRACTION_5 (
     CREATED_AT TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
 );
 
-CREATE OR REPLACE TABLE OPEN_MARKET_LOSS_HISTORY_AGGREGATED_5 (
+CREATE OR REPLACE TABLE OPEN_MARKET_LOSS_HISTORY_AGGREGATED_6 (
     RUN_ID STRING,
     ACCOUNT_FOLDER STRING,
     MIN_LOSS_YEAR NUMBER,
@@ -45,10 +45,10 @@ CREATE OR REPLACE TABLE OPEN_MARKET_LOSS_HISTORY_AGGREGATED_5 (
     AVAILABLE_LOSS_YEAR_COUNT NUMBER,
     TOTAL_AVAILABLE_CLAIM_COUNT NUMBER,
     TOTAL_AVAILABLE_LOSS_AMOUNT FLOAT,
-    LAST_10_YEAR_START NUMBER,
-    LAST_10_YEAR_END NUMBER,
-    LAST_10_YEAR_CLAIM_COUNT NUMBER,
-    LAST_10_YEAR_LOSS_AMOUNT FLOAT,
+    AGGREGATION_START_YEAR NUMBER,
+    AGGREGATION_END_YEAR NUMBER,
+    AGGREGATED_CLAIM_COUNT NUMBER,
+    AGGREGATED_LOSS_AMOUNT FLOAT,
     CURRENCY STRING,
     DATA_QUALITY_FLAG STRING,
     AGGREGATION_REASON STRING,
@@ -57,7 +57,7 @@ CREATE OR REPLACE TABLE OPEN_MARKET_LOSS_HISTORY_AGGREGATED_5 (
     CREATED_AT TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
 );
 
-CREATE OR REPLACE PROCEDURE OPEN_MARKET_LOSS_HISTORY_EXTRACTION_5(
+CREATE OR REPLACE PROCEDURE OPEN_MARKET_LOSS_HISTORY_EXTRACTION_6(
     MAX_ACCOUNTS NUMBER,
     ACCOUNT_NAME_FILTER STRING,
     AS_OF_YEAR NUMBER
@@ -83,15 +83,17 @@ import openpyxl
 STAGE_NAME = '@OPEN_MARKET_SUBMISSION'
 ROOT_PREFIX = 'Open_Market/'
 
-FILE_SELECTION_TABLE = 'OPEN_MARKET_LOSS_FILE_SELECTION_5'
-EXTRACTION_TABLE = 'OPEN_MARKET_LOSS_HISTORY_EXTRACTION_5'
-AGGREGATED_TABLE = 'OPEN_MARKET_LOSS_HISTORY_AGGREGATED_5'
+FILE_SELECTION_TABLE = 'OPEN_MARKET_LOSS_FILE_SELECTION_6'
+EXTRACTION_TABLE = 'OPEN_MARKET_LOSS_HISTORY_EXTRACTION_6'
+AGGREGATED_TABLE = 'OPEN_MARKET_LOSS_HISTORY_AGGREGATED_6'
 
 SUPPORTED_EXTENSIONS = {'.pdf', '.doc', '.docx', '.eml', '.xlsx', '.xlsm'}
 EXCEL_EXTENSIONS = {'.xlsx', '.xlsm'}
 DIRECT_AI_EXTENSIONS = {'.pdf', '.doc', '.docx', '.eml'}
 
 MAX_CANDIDATE_FILES_PER_ACCOUNT = 6
+
+AGGREGATION_START_YEAR_FIXED = 2015
 
 STRONG_LOSS_KEYWORDS = [
     'loss history',
@@ -114,6 +116,7 @@ MEDIUM_LOSS_KEYWORDS = [
     'losses',
     'claim',
     'claims',
+    'cat',
     'incurred',
     'paid',
     'outstanding',
@@ -238,7 +241,7 @@ def safe_float(value):
     if text == '':
         return None
 
-    lowered = text.lower().strip()
+    lowered = text.lower()
 
     if lowered in ('nil', 'none', 'null', 'n/a', 'na', '-', '--', 'no loss', 'no losses'):
         return 0.0
@@ -252,18 +255,10 @@ def safe_float(value):
     text = text.replace('$', '')
     text = text.replace('£', '')
     text = text.replace('€', '')
-    text = text.replace('USD', '')
-    text = text.replace('GBP', '')
-    text = text.replace('EUR', '')
-    text = text.replace('CAD', '')
-    text = text.replace('AUD', '')
-    text = text.replace('CLF', '')
-    text = text.replace('usd', '')
-    text = text.replace('gbp', '')
-    text = text.replace('eur', '')
-    text = text.replace('cad', '')
-    text = text.replace('aud', '')
-    text = text.replace('clf', '')
+
+    for ccy in ['USD', 'GBP', 'EUR', 'CAD', 'AUD', 'CLF', 'usd', 'gbp', 'eur', 'cad', 'aud', 'clf']:
+        text = text.replace(ccy, '')
+
     text = text.strip()
 
     m = re.search(r'-?[\d,.]+', text)
@@ -285,7 +280,7 @@ def safe_float(value):
     elif ',' in number_text:
         parts = number_text.split(',')
 
-        if len(parts[-1]) == 3 and len(parts) > 1:
+        if len(parts) > 1 and len(parts[-1]) == 3:
             number_text = number_text.replace(',', '')
         else:
             number_text = number_text.replace(',', '.')
@@ -295,8 +290,6 @@ def safe_float(value):
 
         if len(parts) > 2:
             number_text = ''.join(parts[:-1]) + '.' + parts[-1]
-        elif len(parts[-1]) == 3 and len(parts[0]) <= 3:
-            number_text = number_text.replace('.', '')
 
     try:
         number = float(number_text)
@@ -565,8 +558,8 @@ def read_stage_file_bytes(session, relative_path):
     return stream.read()
 
 
-def clean_valid_rows(rows):
-    cleaned = []
+def normalize_extracted_rows(rows):
+    normalized = []
 
     for row in rows:
         loss_year = row.get("loss_year")
@@ -580,30 +573,30 @@ def clean_valid_rows(rows):
             continue
 
         try:
-            loss_year_int = int(loss_year)
+            loss_year = int(loss_year)
         except Exception:
             continue
 
-        if loss_year_int < 1900 or loss_year_int > 2099:
+        if loss_year < 1900 or loss_year > 2099:
             continue
 
-        include_in_aggregation = row.get("include_in_aggregation")
-
-        if include_in_aggregation is None:
-            include_in_aggregation = True
+        include_in_aggregation = True
 
         if is_total_or_subtotal_text(source_text):
             include_in_aggregation = False
 
         claim_count = sanitize_claim_count(
             row.get("claim_count"),
-            loss_year_int,
+            loss_year,
             source_text,
             None
         )
 
-        cleaned.append({
-            "loss_year": loss_year_int,
+        if claim_count is None:
+            claim_count = 1
+
+        normalized.append({
+            "loss_year": loss_year,
             "period_text": row.get("period_text"),
             "loss_date": row.get("loss_date"),
             "claim_count": claim_count,
@@ -617,7 +610,7 @@ def clean_valid_rows(rows):
             "extraction_reason": row.get("extraction_reason")
         })
 
-    return cleaned
+    return normalized
 
 
 def extract_excel_loss_rows(session, file_info):
@@ -643,13 +636,12 @@ def extract_excel_loss_rows(session, file_info):
                 continue
 
             amount_header = '' if values[amount_idx] is None else str(values[amount_idx]).strip()
-            count_header = None
-
-            if count_idx is not None and count_idx < len(values):
-                count_header = '' if values[count_idx] is None else str(values[count_idx]).strip()
-
             amount_type = amount_header
             header_currency = detect_currency_from_text(amount_header)
+
+            count_header = None
+            if count_idx is not None and count_idx < len(values):
+                count_header = '' if values[count_idx] is None else str(values[count_idx]).strip()
 
             blank_streak = 0
 
@@ -713,6 +705,9 @@ def extract_excel_loss_rows(session, file_info):
                         count_header
                     )
 
+                if claim_count is None:
+                    claim_count = 1
+
                 extracted.append({
                     "loss_year": loss_year,
                     "period_text": str(period_text),
@@ -725,10 +720,10 @@ def extract_excel_loss_rows(session, file_info):
                     "source_row_text": source_row_text,
                     "include_in_aggregation": True,
                     "confidence": 1.0,
-                    "extraction_reason": "Extracted deterministically from Excel table. Amount column selected by header priority. Risk columns are not treated as claim count."
+                    "extraction_reason": "Extracted from Excel loss table. Amount column selected by header. Year-like counts and risk columns are not used as claim count."
                 })
 
-    return clean_valid_rows(extracted)
+    return normalize_extracted_rows(extracted)
 
 
 def list_stage_files(session):
@@ -772,13 +767,12 @@ def list_stage_files(session):
 def score_excel_file(session, file_info):
     try:
         rows = extract_excel_loss_rows(session, file_info)
+        file_name = file_info["file_name"].lower()
 
         if len(rows) == 0:
             base_score = 10
         else:
-            base_score = 120 + min(len(rows), 50)
-
-        file_name = file_info["file_name"].lower()
+            base_score = 100 + min(len(rows), 50)
 
         for keyword in STRONG_LOSS_KEYWORDS:
             if keyword in file_name:
@@ -790,7 +784,7 @@ def score_excel_file(session, file_info):
 
         for keyword in NEGATIVE_KEYWORDS:
             if keyword in file_name:
-                base_score -= 30
+                base_score -= 25
 
         return float(base_score), None, rows
 
@@ -830,7 +824,7 @@ def get_response_format_json():
             "type": "object",
             "properties": {
                 "loss_table": {
-                    "description": "Extract normalized claim/loss history rows only. Extract rows from tables headed loss history, losses, claims history, CAT loss record, gross claim incurred, total incurred, paid/outstanding/total loss tables.",
+                    "description": "Extract actual yearly/event claim or loss history rows only. Use rows from loss history, CAT loss record, claim history, loss runs, paid/outstanding/total incurred tables.",
                     "type": "object",
                     "column_ordering": [
                         "loss_year",
@@ -846,23 +840,23 @@ def get_response_format_json():
                     ],
                     "properties": {
                         "loss_year": {
-                            "description": "Year of the loss row. For period 2015-16 or 2015 - 2016, use 2015.",
+                            "description": "Year of the loss row. For period 2015-16, use 2015.",
                             "type": "array"
                         },
                         "period_text": {
-                            "description": "Original period/event/year text from the row.",
+                            "description": "Original period/event/year text.",
                             "type": "array"
                         },
                         "loss_date": {
-                            "description": "Loss date if explicitly available.",
+                            "description": "Loss date if available.",
                             "type": "array"
                         },
                         "claim_count": {
-                            "description": "Number of claims/losses only if explicitly present in a count column such as No., # Losses, claim count, number of claims. If not explicitly present, return null. Never copy the year, period, risk count, exposure count, or amount into claim_count.",
+                            "description": "Number of claims/losses only if explicitly available. Never use year, period, amount, risk count, exposure count, or amount as claim count. If not available, return null.",
                             "type": "array"
                         },
                         "loss_amount": {
-                            "description": "Main loss amount for the row. Prefer Gross Claim Incurred, Total Incurred, Total GBP/USD/EUR/CLF/CAD/AUD, Amount CLF/USD/GBP/EUR. Do not use recovery/reserve/risk columns when a total incurred or amount column exists.",
+                            "description": "Main loss amount. Prefer Gross Claim Incurred, Total Incurred, Total GBP/USD/EUR/CLF/CAD/AUD, Amount CLF/USD/GBP/EUR. Do not use recovery, reserve, risk count, or exposure columns as amount.",
                             "type": "array"
                         },
                         "currency": {
@@ -870,7 +864,7 @@ def get_response_format_json():
                             "type": "array"
                         },
                         "amount_type": {
-                            "description": "Column used as amount, e.g. Gross Claim Incurred, Total Incurred, Total GBP, Total USD, Total CLF, Amount CLF.",
+                            "description": "Column or label used as amount.",
                             "type": "array"
                         },
                         "source_row_text": {
@@ -878,11 +872,11 @@ def get_response_format_json():
                             "type": "array"
                         },
                         "include_in_aggregation": {
-                            "description": "false for subtotal, grand total, average, 10 years total, summary rows. true for actual yearly/event rows.",
+                            "description": "false only for subtotal, grand total, average, 10 years total, or summary rows. true for actual yearly/event rows.",
                             "type": "array"
                         },
                         "extraction_reason": {
-                            "description": "Brief reason explaining why the row was extracted and which amount/count fields were used.",
+                            "description": "Brief reason for extraction.",
                             "type": "array"
                         }
                     }
@@ -922,7 +916,6 @@ def parse_ai_result(result):
 
     response = obj.get("response", {})
     scoring = obj.get("scoring", {})
-
     table = response.get("loss_table", {})
 
     if not table:
@@ -963,15 +956,10 @@ def parse_ai_result(result):
         if loss_year is None:
             loss_year = safe_int(row.get("loss_year"))
 
-        include_value = row.get("include_in_aggregation")
+        loss_amount = safe_float(row.get("loss_amount"))
 
-        if include_value is None:
-            include_in_aggregation = not is_total_or_subtotal_text(source_text)
-        else:
-            include_in_aggregation = str(include_value).strip().lower() in ('true', 'yes', '1')
-
-        if is_total_or_subtotal_text(source_text):
-            include_in_aggregation = False
+        if loss_year is None or loss_amount is None:
+            continue
 
         currency = row.get("currency")
 
@@ -988,12 +976,20 @@ def parse_ai_result(result):
             None
         )
 
+        if claim_count is None:
+            claim_count = 1
+
+        include_in_aggregation = True
+
+        if is_total_or_subtotal_text(source_text):
+            include_in_aggregation = False
+
         rows.append({
             "loss_year": loss_year,
             "period_text": period_text,
             "loss_date": row.get("loss_date"),
             "claim_count": claim_count,
-            "loss_amount": safe_float(row.get("loss_amount")),
+            "loss_amount": loss_amount,
             "currency": currency,
             "amount_type": row.get("amount_type"),
             "source_sheet_name": None,
@@ -1003,7 +999,7 @@ def parse_ai_result(result):
             "extraction_reason": row.get("extraction_reason")
         })
 
-    return clean_valid_rows(rows)
+    return normalize_extracted_rows(rows)
 
 
 def insert_file_selection(session, run_id, file_info, score, attempted, selected_final, rank, reason, status, error):
@@ -1110,12 +1106,10 @@ def insert_loss_row(session, run_id, account_folder, file_info, row):
         row.get("extraction_reason")
     ]).collect()
 
-    return True
-
 
 def extract_rows_for_file(session, file_info, pre_extracted_rows=None):
     if pre_extracted_rows is not None:
-        return clean_valid_rows(pre_extracted_rows)
+        return normalize_extracted_rows(pre_extracted_rows)
 
     ext = file_info["extension"]
 
@@ -1135,21 +1129,22 @@ def aggregate_account(session, run_id, account_folder, as_of_year, final_file_in
     else:
         as_of_year = int(as_of_year)
 
-    start_year = as_of_year - 9
+    start_year = AGGREGATION_START_YEAR_FIXED
+    end_year = as_of_year
 
     usable_count_query = f"""
         SELECT COUNT(*)
         FROM {EXTRACTION_TABLE}
         WHERE RUN_ID = ?
           AND ACCOUNT_FOLDER = ?
-          AND INCLUDE_IN_AGGREGATION = TRUE
-          AND LOSS_YEAR IS NOT NULL
+          AND LOSS_YEAR BETWEEN ? AND ?
           AND LOSS_AMOUNT IS NOT NULL
+          AND INCLUDE_IN_AGGREGATION = TRUE
     """
 
     usable_count = session.sql(
         usable_count_query,
-        params=[run_id, account_folder]
+        params=[run_id, account_folder, start_year, end_year]
     ).collect()[0][0]
 
     if usable_count is None or int(usable_count) == 0:
@@ -1162,10 +1157,10 @@ def aggregate_account(session, run_id, account_folder, as_of_year, final_file_in
                 AVAILABLE_LOSS_YEAR_COUNT,
                 TOTAL_AVAILABLE_CLAIM_COUNT,
                 TOTAL_AVAILABLE_LOSS_AMOUNT,
-                LAST_10_YEAR_START,
-                LAST_10_YEAR_END,
-                LAST_10_YEAR_CLAIM_COUNT,
-                LAST_10_YEAR_LOSS_AMOUNT,
+                AGGREGATION_START_YEAR,
+                AGGREGATION_END_YEAR,
+                AGGREGATED_CLAIM_COUNT,
+                AGGREGATED_LOSS_AMOUNT,
                 CURRENCY,
                 DATA_QUALITY_FLAG,
                 AGGREGATION_REASON,
@@ -1186,7 +1181,7 @@ def aggregate_account(session, run_id, account_folder, as_of_year, final_file_in
                 0,
                 'UNKNOWN',
                 'NO_USABLE_LOSS_ROWS',
-                'Rows may have been extracted, but none were usable for aggregation.',
+                'No rows were available between aggregation year range after excluding total/subtotal rows.',
                 ?,
                 ?
         """
@@ -1195,7 +1190,7 @@ def aggregate_account(session, run_id, account_folder, as_of_year, final_file_in
             run_id,
             account_folder,
             start_year,
-            as_of_year,
+            end_year,
             final_file_info["file_name"] if final_file_info else None,
             final_file_info["file_path"] if final_file_info else None
         ]).collect()
@@ -1207,6 +1202,7 @@ def aggregate_account(session, run_id, account_folder, as_of_year, final_file_in
         FROM {EXTRACTION_TABLE}
         WHERE RUN_ID = ?
           AND ACCOUNT_FOLDER = ?
+          AND LOSS_YEAR BETWEEN ? AND ?
           AND INCLUDE_IN_AGGREGATION = TRUE
           AND CURRENCY IS NOT NULL
           AND CURRENCY <> 'UNKNOWN'
@@ -1215,7 +1211,11 @@ def aggregate_account(session, run_id, account_folder, as_of_year, final_file_in
         LIMIT 1
     """
 
-    currency_rows = session.sql(currency_query, params=[run_id, account_folder]).collect()
+    currency_rows = session.sql(
+        currency_query,
+        params=[run_id, account_folder, start_year, end_year]
+    ).collect()
+
     currency = currency_rows[0][0] if currency_rows else 'UNKNOWN'
 
     insert_query = f"""
@@ -1227,10 +1227,10 @@ def aggregate_account(session, run_id, account_folder, as_of_year, final_file_in
             AVAILABLE_LOSS_YEAR_COUNT,
             TOTAL_AVAILABLE_CLAIM_COUNT,
             TOTAL_AVAILABLE_LOSS_AMOUNT,
-            LAST_10_YEAR_START,
-            LAST_10_YEAR_END,
-            LAST_10_YEAR_CLAIM_COUNT,
-            LAST_10_YEAR_LOSS_AMOUNT,
+            AGGREGATION_START_YEAR,
+            AGGREGATION_END_YEAR,
+            AGGREGATED_CLAIM_COUNT,
+            AGGREGATED_LOSS_AMOUNT,
             CURRENCY,
             DATA_QUALITY_FLAG,
             AGGREGATION_REASON,
@@ -1245,45 +1245,43 @@ def aggregate_account(session, run_id, account_folder, as_of_year, final_file_in
             COUNT(DISTINCT LOSS_YEAR) AS AVAILABLE_LOSS_YEAR_COUNT,
             SUM(COALESCE(CLAIM_COUNT, 0)) AS TOTAL_AVAILABLE_CLAIM_COUNT,
             SUM(COALESCE(LOSS_AMOUNT, 0)) AS TOTAL_AVAILABLE_LOSS_AMOUNT,
-            ? AS LAST_10_YEAR_START,
-            ? AS LAST_10_YEAR_END,
-            SUM(CASE WHEN LOSS_YEAR BETWEEN ? AND ? THEN COALESCE(CLAIM_COUNT, 0) ELSE 0 END) AS LAST_10_YEAR_CLAIM_COUNT,
-            SUM(CASE WHEN LOSS_YEAR BETWEEN ? AND ? THEN COALESCE(LOSS_AMOUNT, 0) ELSE 0 END) AS LAST_10_YEAR_LOSS_AMOUNT,
+            ? AS AGGREGATION_START_YEAR,
+            ? AS AGGREGATION_END_YEAR,
+            SUM(COALESCE(CLAIM_COUNT, 0)) AS AGGREGATED_CLAIM_COUNT,
+            SUM(COALESCE(LOSS_AMOUNT, 0)) AS AGGREGATED_LOSS_AMOUNT,
             ? AS CURRENCY,
             CASE
                 WHEN ? = 'UNKNOWN' THEN 'CURRENCY_UNKNOWN'
                 ELSE 'OK'
             END AS DATA_QUALITY_FLAG,
             CASE
-                WHEN ? = 'UNKNOWN' THEN 'Loss rows extracted, but currency could not be identified.'
-                ELSE 'Loss rows extracted and aggregated successfully. Amounts are not currency-converted; they are summed in the detected source currency.'
+                WHEN ? = 'UNKNOWN' THEN 'Rows were aggregated from 2015 to as-of year, but currency was unknown.'
+                ELSE 'Rows were aggregated from 2015 to as-of year. Amounts are summed as source currency values without FX conversion.'
             END AS AGGREGATION_REASON,
             ? AS FINAL_SOURCE_FILE_NAME,
             ? AS FINAL_SOURCE_FILE_PATH
         FROM {EXTRACTION_TABLE}
         WHERE RUN_ID = ?
           AND ACCOUNT_FOLDER = ?
-          AND INCLUDE_IN_AGGREGATION = TRUE
-          AND LOSS_YEAR IS NOT NULL
+          AND LOSS_YEAR BETWEEN ? AND ?
           AND LOSS_AMOUNT IS NOT NULL
+          AND INCLUDE_IN_AGGREGATION = TRUE
     """
 
     session.sql(insert_query, params=[
         run_id,
         account_folder,
         start_year,
-        as_of_year,
-        start_year,
-        as_of_year,
-        start_year,
-        as_of_year,
+        end_year,
         currency,
         currency,
         currency,
         final_file_info["file_name"] if final_file_info else None,
         final_file_info["file_path"] if final_file_info else None,
         run_id,
-        account_folder
+        account_folder,
+        start_year,
+        end_year
     ]).collect()
 
 
@@ -1380,11 +1378,11 @@ def run(session, max_accounts, account_name_filter, as_of_year):
             attempted = item["file_info"]["file_path"] in candidate_paths
 
             if attempted:
-                reason = 'Candidate for extraction. If higher ranked candidates produce zero valid rows, the next candidate will be tried.'
+                reason = 'Candidate for extraction. If this candidate gives zero valid rows, next ranked candidate will be tried.'
+                status = 'CANDIDATE'
             else:
-                reason = 'Not attempted because it ranked below the candidate limit.'
-
-            status = 'CANDIDATE' if attempted else 'NOT_ATTEMPTED'
+                reason = 'Not attempted because it ranked below candidate limit.'
+                status = 'NOT_ATTEMPTED'
 
             if item["error"] is not None:
                 status = 'SCORING_ERROR'
@@ -1421,7 +1419,7 @@ def run(session, max_accounts, account_name_filter, as_of_year):
                     candidate.get("pre_rows")
                 )
 
-                rows = clean_valid_rows(rows)
+                rows = normalize_extracted_rows(rows)
 
                 if len(rows) == 0:
                     update_file_selection_status(
@@ -1491,7 +1489,9 @@ def run(session, max_accounts, account_name_filter, as_of_year):
         "extracted_rows_count": extracted_rows_count,
         "error_count": len(errors),
         "errors_sample": errors[:10],
-        "candidate_limit_per_account": MAX_CANDIDATE_FILES_PER_ACCOUNT
+        "candidate_limit_per_account": MAX_CANDIDATE_FILES_PER_ACCOUNT,
+        "aggregation_start_year": AGGREGATION_START_YEAR_FIXED,
+        "aggregation_end_year": int(as_of_year) if as_of_year is not None and int(as_of_year) > 0 else datetime.now().year
     }
 
     return json.dumps(summary, indent=2)
