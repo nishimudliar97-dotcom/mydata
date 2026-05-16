@@ -1,4 +1,4 @@
-CREATE OR REPLACE PROCEDURE OPEN_MARKET_LOSS_HISTORY_EXTRACTION_3(
+CREATE OR REPLACE PROCEDURE OPEN_MARKET_LOSS_HISTORY_EXTRACTION_4(
     MAX_ACCOUNTS NUMBER,
     ACCOUNT_NAME_FILTER STRING,
     AS_OF_YEAR NUMBER,
@@ -25,10 +25,10 @@ import openpyxl
 STAGE_NAME = '@OPEN_MARKET_SUBMISSION'
 ROOT_PREFIX = 'Open_Market/'
 
-FILE_SELECTION_TABLE = 'OPEN_MARKET_LOSS_FILE_SELECTION_3'
-EXTRACTION_TABLE = 'OPEN_MARKET_LOSS_HISTORY_EXTRACTION_3'
-AGGREGATED_TABLE = 'OPEN_MARKET_LOSS_HISTORY_AGGREGATED_3'
-PROCESSED_TABLE = 'OPEN_MARKET_LOSS_PROCESSED_ACCOUNTS_3'
+FILE_SELECTION_TABLE = 'OPEN_MARKET_LOSS_FILE_SELECTION_4'
+EXTRACTION_TABLE = 'OPEN_MARKET_LOSS_HISTORY_EXTRACTION_4'
+AGGREGATED_TABLE = 'OPEN_MARKET_LOSS_HISTORY_AGGREGATED_4'
+PROCESSED_TABLE = 'OPEN_MARKET_LOSS_PROCESSED_ACCOUNTS_4'
 
 SUPPORTED_EXTENSIONS = {'.pdf', '.doc', '.docx', '.eml', '.xlsx', '.xlsm'}
 EXCEL_EXTENSIONS = {'.xlsx', '.xlsm'}
@@ -73,12 +73,9 @@ MONTH_MAP = {
 def clean_number(value):
     if value is None:
         return None
-
     text = str(value).strip()
-
     if text == '' or text.lower() in ('none', 'null', 'nan'):
         return None
-
     try:
         return float(text)
     except Exception:
@@ -87,10 +84,8 @@ def clean_number(value):
 
 def clean_int(value):
     number = clean_number(value)
-
     if number is None:
         return None
-
     return int(round(number))
 
 
@@ -239,10 +234,8 @@ def parse_number(value):
 
 def parse_int(value):
     num = parse_number(value)
-
     if num is None:
         return None
-
     return int(round(num))
 
 
@@ -607,10 +600,7 @@ def get_ai_response_format_json():
                     ],
                     "properties": {
                         "loss_year": {
-                            "description": (
-                                "Year of loss. For 2015-16 use 2015. For 24-03-2015 use 2015. "
-                                "For jul-17 or ago-19 use 2017 or 2019."
-                            ),
+                            "description": "Year of loss. For 2015-16 use 2015. For 24-03-2015 use 2015. For jul-17 or ago-19 use 2017 or 2019.",
                             "type": "array"
                         },
                         "period_text": {
@@ -622,19 +612,11 @@ def get_ai_response_format_json():
                             "type": "array"
                         },
                         "claim_count": {
-                            "description": (
-                                "Use explicit # Losses, No. of claims, or count column if present. "
-                                "Never use year, policy year, UW year, period, or date as claim_count. "
-                                "If each row is a single event/claim and no count is present, use 1. "
-                                "If only amount by year is present and no count exists, leave blank."
-                            ),
+                            "description": "Use explicit # Losses, No. of claims, or count column if present. Never use year, policy year, UW year, period, or date as claim_count. If each row is a single event/claim and no count is present, use 1. If only amount by year is present and no count exists, leave blank.",
                             "type": "array"
                         },
                         "loss_amount": {
-                            "description": (
-                                "Main loss amount. Prefer Total/Gross/Net Incurred, Total GBP/USD/EUR/CLF, "
-                                "Amount CLF, Reinsurer Payout, or Total Payable by Reinsurers."
-                            ),
+                            "description": "Main loss amount. Prefer Total/Gross/Net Incurred, Total GBP/USD/EUR/CLF, Amount CLF, Reinsurer Payout, or Total Payable by Reinsurers.",
                             "type": "array"
                         },
                         "currency": {
@@ -946,30 +928,18 @@ def aggregate_account(session, run_id, account_folder, as_of_year):
 
     query = f"""
         SELECT
-            MIN(TRY_TO_NUMBER(LOSS_YEAR)) AS MIN_LOSS_YEAR,
-            MAX(TRY_TO_NUMBER(LOSS_YEAR)) AS MAX_LOSS_YEAR,
-            COUNT(DISTINCT TRY_TO_NUMBER(LOSS_YEAR)) AS AVAILABLE_LOSS_YEAR_COUNT,
-            SUM(COALESCE(TRY_TO_DOUBLE(CLAIM_COUNT), 0)) AS TOTAL_AVAILABLE_CLAIM_COUNT,
-            SUM(COALESCE(TRY_TO_DOUBLE(LOSS_AMOUNT), 0)) AS TOTAL_AVAILABLE_LOSS_AMOUNT,
-            SUM(
-                CASE
-                    WHEN TRY_TO_NUMBER(LOSS_YEAR) BETWEEN ? AND ?
-                    THEN COALESCE(TRY_TO_DOUBLE(CLAIM_COUNT), 0)
-                    ELSE 0
-                END
-            ) AS LAST_10_YEAR_CLAIM_COUNT,
-            SUM(
-                CASE
-                    WHEN TRY_TO_NUMBER(LOSS_YEAR) BETWEEN ? AND ?
-                    THEN COALESCE(TRY_TO_DOUBLE(LOSS_AMOUNT), 0)
-                    ELSE 0
-                END
-            ) AS LAST_10_YEAR_LOSS_AMOUNT
+            MIN(LOSS_YEAR),
+            MAX(LOSS_YEAR),
+            COUNT(DISTINCT LOSS_YEAR),
+            SUM(COALESCE(CLAIM_COUNT, 0)),
+            SUM(COALESCE(LOSS_AMOUNT, 0)),
+            SUM(CASE WHEN LOSS_YEAR BETWEEN ? AND ? THEN COALESCE(CLAIM_COUNT, 0) ELSE 0 END),
+            SUM(CASE WHEN LOSS_YEAR BETWEEN ? AND ? THEN COALESCE(LOSS_AMOUNT, 0) ELSE 0 END)
         FROM {EXTRACTION_TABLE}
         WHERE RUN_ID = ?
           AND ACCOUNT_FOLDER = ?
           AND INCLUDE_IN_AGGREGATION = TRUE
-          AND TRY_TO_NUMBER(LOSS_YEAR) IS NOT NULL
+          AND LOSS_YEAR IS NOT NULL
     """
 
     result = session.sql(query, params=[
@@ -1141,7 +1111,6 @@ def run(session, max_accounts, account_name_filter, as_of_year, force_reprocess)
             try:
                 if file_info["extension"] in EXCEL_EXTENSIONS:
                     score, content_found, error = score_excel_file(session, file_info)
-                    rows = None
 
                 else:
                     base_score = score_non_excel_file_base(file_info)
@@ -1159,7 +1128,6 @@ def run(session, max_accounts, account_name_filter, as_of_year, force_reprocess)
                         score = base_score
                         content_found = False
                         error = None
-                        rows = None
 
                 scored_files.append({
                     "file_info": file_info,
