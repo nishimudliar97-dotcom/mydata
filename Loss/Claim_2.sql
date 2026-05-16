@@ -1,8 +1,66 @@
+CREATE OR REPLACE TABLE OPEN_MARKET_LOSS_FILE_SELECTION_4 (
+    RUN_ID STRING,
+    ACCOUNT_FOLDER STRING,
+    FILE_NAME STRING,
+    FILE_PATH STRING,
+    FILE_EXTENSION STRING,
+    FILE_SIZE NUMBER,
+    LAST_MODIFIED STRING,
+    LOSS_RELEVANCE_SCORE FLOAT,
+    ATTEMPTED_FOR_EXTRACTION BOOLEAN,
+    SELECTED_FOR_FINAL_EXTRACTION BOOLEAN,
+    SELECTION_RANK NUMBER,
+    SELECTION_REASON STRING,
+    PARSE_STATUS STRING,
+    ERROR_MESSAGE STRING,
+    CREATED_AT TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
+);
+
+CREATE OR REPLACE TABLE OPEN_MARKET_LOSS_HISTORY_EXTRACTION_4 (
+    RUN_ID STRING,
+    ACCOUNT_FOLDER STRING,
+    SOURCE_FILE_NAME STRING,
+    SOURCE_FILE_PATH STRING,
+    SOURCE_FILE_TYPE STRING,
+    LOSS_YEAR NUMBER,
+    PERIOD_TEXT STRING,
+    LOSS_DATE STRING,
+    CLAIM_COUNT NUMBER,
+    LOSS_AMOUNT FLOAT,
+    CURRENCY STRING,
+    AMOUNT_TYPE STRING,
+    SOURCE_SHEET_NAME STRING,
+    SOURCE_ROW_TEXT STRING,
+    INCLUDE_IN_AGGREGATION BOOLEAN,
+    CONFIDENCE FLOAT,
+    EXTRACTION_REASON STRING,
+    CREATED_AT TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
+);
+
+CREATE OR REPLACE TABLE OPEN_MARKET_LOSS_HISTORY_AGGREGATED_4 (
+    RUN_ID STRING,
+    ACCOUNT_FOLDER STRING,
+    MIN_LOSS_YEAR NUMBER,
+    MAX_LOSS_YEAR NUMBER,
+    AVAILABLE_LOSS_YEAR_COUNT NUMBER,
+    TOTAL_AVAILABLE_CLAIM_COUNT NUMBER,
+    TOTAL_AVAILABLE_LOSS_AMOUNT FLOAT,
+    LAST_10_YEAR_START NUMBER,
+    LAST_10_YEAR_END NUMBER,
+    LAST_10_YEAR_CLAIM_COUNT NUMBER,
+    LAST_10_YEAR_LOSS_AMOUNT FLOAT,
+    CURRENCY STRING,
+    DATA_QUALITY_FLAG STRING,
+    AGGREGATION_REASON STRING,
+    FINAL_SOURCE_FILE_NAME STRING,
+    FINAL_SOURCE_FILE_PATH STRING,
+    CREATED_AT TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
+);
+
 CREATE OR REPLACE PROCEDURE OPEN_MARKET_LOSS_HISTORY_EXTRACTION_4(
     MAX_ACCOUNTS NUMBER,
     ACCOUNT_NAME_FILTER STRING,
-    AS_OF_YEAR NUMBER,
-    FORCE_REPROCESS BOOLEAN
+    AS_OF_YEAR NUMBER
 )
 RETURNS STRING
 LANGUAGE PYTHON
@@ -28,65 +86,68 @@ ROOT_PREFIX = 'Open_Market/'
 FILE_SELECTION_TABLE = 'OPEN_MARKET_LOSS_FILE_SELECTION_4'
 EXTRACTION_TABLE = 'OPEN_MARKET_LOSS_HISTORY_EXTRACTION_4'
 AGGREGATED_TABLE = 'OPEN_MARKET_LOSS_HISTORY_AGGREGATED_4'
-PROCESSED_TABLE = 'OPEN_MARKET_LOSS_PROCESSED_ACCOUNTS_4'
 
 SUPPORTED_EXTENSIONS = {'.pdf', '.doc', '.docx', '.eml', '.xlsx', '.xlsm'}
 EXCEL_EXTENSIONS = {'.xlsx', '.xlsm'}
 DIRECT_AI_EXTENSIONS = {'.pdf', '.doc', '.docx', '.eml'}
 
-LOSS_KEYWORDS = [
-    'loss history', 'loss record', 'loss run', 'loss runs', 'losses', 'loss',
-    'claim history', 'claims history', 'claims external', 'claim', 'claims',
-    'cat loss', 'cat losses', 'cat loss record',
-    'total incurred', 'incurred net', 'gross claim incurred', 'gross incurred',
-    'paid', 'outstanding', 'reinsurer payout', 'total payable by reinsurers',
-    'aggregate erosion', 'yoa', 'uw year', 'policy year', 'period',
-    'amount clf', 'amount gbp', 'amount usd', 'amount eur', '# losses'
+MAX_CANDIDATE_FILES_PER_ACCOUNT = 6
+
+STRONG_LOSS_KEYWORDS = [
+    'loss history',
+    'loss histories',
+    'loss record',
+    'loss records',
+    'loss run',
+    'loss runs',
+    'cat loss',
+    'cat losses',
+    'claim history',
+    'claims history',
+    'claims experience',
+    'large loss',
+    'large losses'
 ]
 
-SOFT_FILE_KEYWORDS = [
-    'submission', 'slip', 'quote', 'mail', 'new business', 'renewal',
-    'summary', 'bordereau', 'bor', 'convex'
+MEDIUM_LOSS_KEYWORDS = [
+    'loss',
+    'losses',
+    'claim',
+    'claims',
+    'incurred',
+    'paid',
+    'outstanding',
+    'reinsurer payout',
+    'total payable',
+    'aggregate erosion',
+    'yoa',
+    'uw year',
+    'policy year'
+]
+
+HELPFUL_DOC_KEYWORDS = [
+    'submission',
+    'slip',
+    'quote',
+    'mail',
+    'email',
+    'new business',
+    'renewal',
+    'convex'
 ]
 
 NEGATIVE_KEYWORDS = [
-    'statement of values', 'sov', 'construction', 'occupancy',
-    'schedule of values', 'building values', 'tiv', 'exposure only'
+    'statement of values',
+    'sov',
+    'schedule of values',
+    'construction',
+    'occupancy',
+    'building values',
+    'tiv',
+    'exposure only',
+    'engineering',
+    'risk survey'
 ]
-
-MONTH_MAP = {
-    'jan': 1, 'january': 1, 'ene': 1, 'enero': 1,
-    'feb': 2, 'february': 2, 'febrero': 2,
-    'mar': 3, 'march': 3, 'marzo': 3,
-    'apr': 4, 'april': 4, 'abr': 4, 'abril': 4,
-    'may': 5, 'mayo': 5,
-    'jun': 6, 'june': 6, 'junio': 6,
-    'jul': 7, 'july': 7, 'julio': 7,
-    'aug': 8, 'august': 8, 'ago': 8, 'agosto': 8,
-    'sep': 9, 'sept': 9, 'september': 9, 'septiembre': 9,
-    'oct': 10, 'october': 10, 'octubre': 10,
-    'nov': 11, 'november': 11, 'noviembre': 11,
-    'dec': 12, 'december': 12, 'dic': 12, 'diciembre': 12
-}
-
-
-def clean_number(value):
-    if value is None:
-        return None
-    text = str(value).strip()
-    if text == '' or text.lower() in ('none', 'null', 'nan'):
-        return None
-    try:
-        return float(text)
-    except Exception:
-        return None
-
-
-def clean_int(value):
-    number = clean_number(value)
-    if number is None:
-        return None
-    return int(round(number))
 
 
 def normalize_stage_relative_path(raw_name):
@@ -134,6 +195,10 @@ def row_to_text(values):
     return ' | '.join(['' if v is None else str(v).strip() for v in values])
 
 
+def is_blank_row(values):
+    return row_to_text(values).strip().replace('|', '').strip() == ''
+
+
 def is_total_or_subtotal_text(text):
     if text is None:
         return False
@@ -144,24 +209,23 @@ def is_total_or_subtotal_text(text):
         'sub total',
         'subtotal',
         'grand total',
+        'total years',
         '10 years',
-        '10 year',
+        'ten years',
         '5 year average',
         'five year average',
         'average',
         'overall total',
-        'total available'
+        'total available',
+        'all years total'
     ]
 
     return any(x in t for x in bad_markers)
 
 
-def parse_number(value):
+def safe_float(value):
     if value is None:
         return None
-
-    if isinstance(value, int) or isinstance(value, float):
-        return float(value)
 
     text = str(value).strip()
 
@@ -170,7 +234,7 @@ def parse_number(value):
 
     lowered = text.lower()
 
-    if lowered in ('nil', 'none', 'null', 'n/a', 'na', '-', '--'):
+    if lowered in ('nil', 'none', 'null', 'n/a', 'na', '-', '--', 'no loss', 'no losses'):
         return 0.0
 
     negative = False
@@ -179,91 +243,59 @@ def parse_number(value):
         negative = True
         text = text[1:-1]
 
-    text = text.replace('€', '').replace('$', '').replace('£', '')
-    text = re.sub(r'\b(usd|gbp|eur|clf|cad|aud)\b', '', text, flags=re.I)
+    text = text.replace(',', '')
+    text = text.replace('$', '')
+    text = text.replace('£', '')
+    text = text.replace('€', '')
+    text = text.replace('USD', '')
+    text = text.replace('GBP', '')
+    text = text.replace('EUR', '')
+    text = text.replace('CAD', '')
+    text = text.replace('AUD', '')
+    text = text.replace('CLF', '')
+    text = text.replace('usd', '')
+    text = text.replace('gbp', '')
+    text = text.replace('eur', '')
+    text = text.replace('cad', '')
+    text = text.replace('aud', '')
+    text = text.replace('clf', '')
     text = text.strip()
 
-    m = re.search(r'-?[\d.,]+', text)
+    m = re.search(r'-?\d+(\.\d+)?', text)
 
     if not m:
         return None
 
-    num = m.group(0)
-
-    if ',' in num and '.' in num:
-        last_comma = num.rfind(',')
-        last_dot = num.rfind('.')
-
-        if last_dot > last_comma:
-            num = num.replace(',', '')
-        else:
-            num = num.replace('.', '').replace(',', '.')
-
-    elif ',' in num:
-        parts = num.split(',')
-
-        if len(parts) > 2:
-            num = ''.join(parts)
-        else:
-            left, right = parts[0], parts[1]
-            if len(right) == 3 and len(left) >= 1:
-                num = left + right
-            else:
-                num = left + '.' + right
-
-    elif '.' in num:
-        parts = num.split('.')
-
-        if len(parts) > 2:
-            num = ''.join(parts)
-        else:
-            left, right = parts[0], parts[1]
-            if len(right) == 3 and len(left) >= 4:
-                num = left + right
-
-    try:
-        parsed = float(num)
-    except Exception:
-        return None
+    number = float(m.group(0))
 
     if negative:
-        parsed = parsed * -1
+        number = number * -1
 
-    return parsed
+    return number
 
 
-def parse_int(value):
-    num = parse_number(value)
-    if num is None:
+def safe_int(value):
+    number = safe_float(value)
+
+    if number is None:
         return None
-    return int(round(num))
+
+    return int(round(number))
 
 
 def extract_year_from_text(text):
     if text is None:
         return None
 
-    t = str(text).strip()
+    t = str(text)
 
     m_range = re.search(r'\b((?:19|20)\d{2})\s*[-/]\s*(\d{2,4})\b', t)
     if m_range:
         return int(m_range.group(1))
 
-    m_date = re.search(r'\b\d{1,2}[-/]\d{1,2}[-/]((?:19|20)\d{2})\b', t)
-    if m_date:
-        return int(m_date.group(1))
-
-    m_year = re.search(r'\b((?:19|20)\d{2})\b', t)
-    if m_year:
-        return int(m_year.group(1))
-
-    m_short = re.search(r'\b([a-zA-Z]{3,9})[-\s]?(\d{2})\b', t)
-    if m_short:
-        month = m_short.group(1).lower()
-        yy = int(m_short.group(2))
-
-        if month in MONTH_MAP:
-            return 2000 + yy if yy < 50 else 1900 + yy
+    m = re.search(r'\b(?:19|20)\d{2}\b', t)
+    if m:
+        return int(m.group(0))
 
     return None
 
@@ -290,141 +322,187 @@ def detect_currency_from_text(text):
     return None
 
 
-def is_bad_count_header(header_text):
-    h = str(header_text or '').lower()
+def sanitize_claim_count(raw_claim_count, loss_year, source_text, count_header=None):
+    claim_count = safe_int(raw_claim_count)
 
-    bad = [
-        'year', 'date', 'period', 'amount', 'incurred', 'paid',
-        'outstanding', 'recovery', 'reserve', 'currency', 'policy'
-    ]
+    if claim_count is None:
+        return None
 
-    return any(x in h for x in bad)
+    if claim_count < 0:
+        return None
+
+    if loss_year is not None and claim_count == int(loss_year):
+        return None
+
+    if 1900 <= claim_count <= 2099:
+        return None
+
+    if claim_count > 50000:
+        return None
+
+    return claim_count
 
 
 def looks_like_header(values):
     line = row_to_text(values).lower()
 
     year_markers = [
-        'event', 'period', 'yoa', 'uw year', 'policy year',
-        'loss date', 'claim date', 'date', 'd.o.l', 'dol'
+        'event',
+        'period',
+        'yoa',
+        'uw year',
+        'policy year',
+        'loss date',
+        'date of loss',
+        'claim date',
+        'date'
     ]
 
     amount_markers = [
-        'amount', 'total incurred', 'incurred net', 'gross claim incurred',
-        'gross incurred', 'total gbp', 'total usd', 'total eur', 'total clf',
-        'amount clf', 'paid', 'outstanding', 'reinsurer payout',
-        'total payable'
-    ]
-
-    count_markers = [
-        '# losses', 'no. losses', 'number of losses', 'loss count',
-        'claim count', 'number of claims'
+        'gross claim incurred',
+        'gross incurred',
+        'total incurred',
+        'incurred net',
+        'total gbp',
+        'total usd',
+        'total eur',
+        'total clf',
+        'total cad',
+        'total aud',
+        'paid gbp',
+        'paid usd',
+        'outstanding gbp',
+        'outstanding usd',
+        'amount clf',
+        'amount',
+        'claim incurred'
     ]
 
     has_period = any(x in line for x in year_markers)
     has_amount = any(x in line for x in amount_markers)
-    has_count = any(x in line for x in count_markers)
 
-    return has_period and (has_amount or has_count)
+    return has_period and has_amount
 
 
-def find_amount_col(headers):
+def find_column_indexes(header_values):
+    period_idx = None
+    amount_idx = None
+    count_idx = None
+
+    lowered = ['' if v is None else str(v).strip().lower() for v in header_values]
+
+    period_priority = [
+        'period',
+        'date of loss',
+        'loss date',
+        'event',
+        'yoa',
+        'uw year',
+        'policy year',
+        'claim date',
+        'date'
+    ]
+
     amount_priority = [
         'gross claim incurred',
-        'total incurred 100%',
-        'total incurred',
-        'incurred net',
         'gross incurred',
+        'total incurred 100',
+        'total incurred',
+        'total claim incurred',
+        'claim incurred',
+        'incurred net',
         'total payable by reinsurers',
         'reinsurer payout',
         'total gbp',
         'total usd',
         'total eur',
         'total clf',
+        'total cad',
+        'total aud',
         'amount clf',
-        'amount gbp',
-        'amount usd',
-        'amount eur',
         'amount',
+        'paid gbp',
+        'paid usd',
+        'paid eur',
         'paid',
+        'outstanding gbp',
+        'outstanding usd',
         'outstanding'
     ]
 
-    lowered = ['' if v is None else str(v).strip().lower() for v in headers]
-
-    for keyword in amount_priority:
-        for i, value in enumerate(lowered):
-            if keyword in value:
-                return i, str(headers[i]).strip()
-
-    return None, None
-
-
-def find_period_col(headers):
-    period_priority = [
-        'event',
-        'period',
-        'd.o.l',
-        'dol',
-        'date of loss',
-        'loss date',
-        'claim date',
-        'notification date',
-        'yoa',
-        'uw year',
-        'policy year',
-        'date'
+    negative_amount_headers = [
+        'recovery',
+        'recoveries',
+        'reserve',
+        'reserves',
+        'cost reserves',
+        'salvage',
+        'deductible'
     ]
-
-    lowered = ['' if v is None else str(v).strip().lower() for v in headers]
 
     for keyword in period_priority:
         for i, value in enumerate(lowered):
             if keyword in value:
-                return i
+                period_idx = i
+                break
+        if period_idx is not None:
+            break
 
-    return None
-
-
-def find_count_col(headers, amount_idx):
-    lowered = ['' if v is None else str(v).strip().lower() for v in headers]
-
-    explicit_keywords = [
-        '# losses',
-        'no. losses',
-        'number of losses',
-        'loss count',
-        'claim count',
-        'number of claims',
-        'no of claims',
-        '# claims'
-    ]
-
-    for keyword in explicit_keywords:
+    for keyword in amount_priority:
         for i, value in enumerate(lowered):
-            if keyword in value and not is_bad_count_header(value):
-                return i
+            if keyword in value:
+                if any(neg in value for neg in negative_amount_headers):
+                    continue
+                amount_idx = i
+                break
+        if amount_idx is not None:
+            break
 
     if amount_idx is not None:
-        for i in range(amount_idx - 1, -1, -1):
-            value = lowered[i].strip()
-            if value in ('no.', 'no', '#') and not is_bad_count_header(value):
-                return i
+        previous_idx = amount_idx - 1
+        if previous_idx >= 0:
+            previous_header = lowered[previous_idx]
+            if previous_header in ('no', 'no.', '#', '# losses', 'number', 'count') or 'no.' in previous_header or '# losses' in previous_header:
+                count_idx = previous_idx
 
-    return None
+        if count_idx is None:
+            for i in range(max(0, amount_idx - 3), min(len(lowered), amount_idx + 2)):
+                header = lowered[i]
+                if header in ('no', 'no.', '#', '# losses', 'number', 'count') or '# losses' in header or 'number of claims' in header or 'claim count' in header:
+                    count_idx = i
+                    break
+
+    if count_idx is None:
+        count_priority = [
+            '# losses',
+            'claim count',
+            'number of claims',
+            'no. of claims',
+            'no of claims',
+            'claims count'
+        ]
+
+        for keyword in count_priority:
+            for i, value in enumerate(lowered):
+                if keyword in value:
+                    count_idx = i
+                    break
+            if count_idx is not None:
+                break
+
+    return period_idx, amount_idx, count_idx
 
 
-def is_event_level_row(period_text, source_row_text):
-    text = f"{period_text or ''} {source_row_text or ''}".lower()
+def is_event_level_loss_table(header_values):
+    line = row_to_text(header_values).lower()
 
-    event_markers = [
-        'flood', 'fire', 'eq', 'earthquake', 'storm', 'hail',
-        'wind', 'srcc', 'riot', 'rain', 'tornado', 'copiapo',
-        'valparaiso', 'sismo', 'terremoto', 'inundacion',
-        'loss', 'claim'
-    ]
+    if 'event' in line and ('date of loss' in line or 'd.o.l' in line or 'loss date' in line):
+        return True
 
-    return any(x in text for x in event_markers)
+    if 'cat loss' in line or 'cat losses' in line:
+        return True
+
+    return False
 
 
 def read_stage_file_bytes(session, relative_path):
@@ -446,30 +524,32 @@ def extract_excel_loss_rows(session, file_info):
         for row in ws.iter_rows(values_only=True):
             all_rows.append(list(row))
 
-        for row_idx, header_values in enumerate(all_rows):
-            if not looks_like_header(header_values):
+        for row_idx, values in enumerate(all_rows):
+            if not looks_like_header(values):
                 continue
 
-            period_idx = find_period_col(header_values)
-            amount_idx, amount_type = find_amount_col(header_values)
+            period_idx, amount_idx, count_idx = find_column_indexes(values)
 
             if amount_idx is None:
                 continue
 
-            count_idx = find_count_col(header_values, amount_idx)
+            amount_header = '' if values[amount_idx] is None else str(values[amount_idx]).strip()
+            count_header = None
 
-            header_text = row_to_text(header_values)
-            currency = detect_currency_from_text(header_text) or detect_currency_from_text(sheet_name)
+            if count_idx is not None and count_idx < len(values):
+                count_header = '' if values[count_idx] is None else str(values[count_idx]).strip()
+
+            amount_type = amount_header
+            currency = detect_currency_from_text(amount_header)
+            event_level_table = is_event_level_loss_table(values)
 
             blank_streak = 0
 
-            for data_idx in range(row_idx + 1, len(all_rows)):
+            for data_idx in range(row_idx + 1, min(row_idx + 500, len(all_rows))):
                 data_values = all_rows[data_idx]
                 source_row_text = row_to_text(data_values)
 
-                cleaned = source_row_text.strip().replace('|', '').strip()
-
-                if cleaned == '':
+                if is_blank_row(data_values):
                     blank_streak += 1
                     if blank_streak >= 20:
                         break
@@ -499,30 +579,36 @@ def extract_excel_loss_rows(session, file_info):
                 if amount_idx >= len(data_values):
                     continue
 
-                loss_amount = parse_number(data_values[amount_idx])
+                loss_amount = safe_float(data_values[amount_idx])
 
                 if loss_amount is None:
                     continue
 
-                row_currency = currency or detect_currency_from_text(source_row_text) or 'UNKNOWN'
+                row_currency = currency
+
+                if row_currency is None:
+                    row_currency = detect_currency_from_text(source_row_text)
+
+                if row_currency is None:
+                    row_currency = 'UNKNOWN'
 
                 claim_count = None
 
                 if count_idx is not None and count_idx < len(data_values):
-                    count_header = header_values[count_idx]
-                    if not is_bad_count_header(count_header):
-                        claim_count = parse_int(data_values[count_idx])
+                    claim_count = sanitize_claim_count(
+                        data_values[count_idx],
+                        loss_year,
+                        source_row_text,
+                        count_header
+                    )
 
-                if claim_count is None:
-                    if is_event_level_row(period_text, source_row_text):
-                        claim_count = 1
-                    else:
-                        claim_count = None
+                if claim_count is None and event_level_table:
+                    claim_count = 1
 
                 extracted.append({
                     "loss_year": loss_year,
                     "period_text": str(period_text),
-                    "loss_date": str(period_text) if re.search(r'\d{1,2}[-/]\d{1,2}[-/]\d{2,4}', str(period_text)) else None,
+                    "loss_date": None,
                     "claim_count": claim_count,
                     "loss_amount": loss_amount,
                     "currency": row_currency,
@@ -531,7 +617,7 @@ def extract_excel_loss_rows(session, file_info):
                     "source_row_text": source_row_text,
                     "include_in_aggregation": True,
                     "confidence": 1.0,
-                    "extraction_reason": "Extracted deterministically from Excel table header and row values."
+                    "extraction_reason": "Extracted deterministically from Excel. Claim count is only used when an explicit count column is present; year-like counts are suppressed."
                 })
 
     return extracted
@@ -575,16 +661,68 @@ def list_stage_files(session):
     return files
 
 
-def get_ai_response_format_json():
+def score_excel_file(session, file_info):
+    try:
+        rows = extract_excel_loss_rows(session, file_info)
+
+        if len(rows) == 0:
+            base_score = 10
+        else:
+            base_score = 90 + min(len(rows), 30)
+
+        file_name = file_info["file_name"].lower()
+
+        for keyword in STRONG_LOSS_KEYWORDS:
+            if keyword in file_name:
+                base_score += 30
+
+        for keyword in MEDIUM_LOSS_KEYWORDS:
+            if keyword in file_name:
+                base_score += 10
+
+        for keyword in NEGATIVE_KEYWORDS:
+            if keyword in file_name:
+                base_score -= 20
+
+        return float(base_score), None, rows
+
+    except Exception as e:
+        return 0.0, str(e), []
+
+
+def score_non_excel_file(file_info):
+    file_name = file_info["file_name"].lower()
+    score = 0
+
+    for keyword in STRONG_LOSS_KEYWORDS:
+        if keyword in file_name:
+            score += 35
+
+    for keyword in MEDIUM_LOSS_KEYWORDS:
+        if keyword in file_name:
+            score += 12
+
+    for keyword in HELPFUL_DOC_KEYWORDS:
+        if keyword in file_name:
+            score += 4
+
+    for keyword in NEGATIVE_KEYWORDS:
+        if keyword in file_name:
+            score -= 20
+
+    if file_info["extension"] in DIRECT_AI_EXTENSIONS:
+        score += 5
+
+    return float(score)
+
+
+def get_response_format_json():
     schema = {
         "schema": {
             "type": "object",
             "properties": {
                 "loss_table": {
-                    "description": (
-                        "Extract claim/loss history rows only. Look for sections/tables called Loss History, "
-                        "Loss Record, CAT Loss Record, Claims External, Loss Runs, 5 Year Net Losses, or similar."
-                    ),
+                    "description": "Extract normalized claim/loss history rows only. Extract rows from tables headed loss history, losses, claims history, CAT loss record, gross claim incurred, total incurred, paid/outstanding/total loss tables.",
                     "type": "object",
                     "column_ordering": [
                         "loss_year",
@@ -600,23 +738,23 @@ def get_ai_response_format_json():
                     ],
                     "properties": {
                         "loss_year": {
-                            "description": "Year of loss. For 2015-16 use 2015. For 24-03-2015 use 2015. For jul-17 or ago-19 use 2017 or 2019.",
+                            "description": "Year of the loss row. For period 2015-16 or 2015 - 2016, use 2015.",
                             "type": "array"
                         },
                         "period_text": {
-                            "description": "Original period, event, D.O.L, policy year, or date text.",
+                            "description": "Original period/event/year text from the row.",
                             "type": "array"
                         },
                         "loss_date": {
-                            "description": "Loss date if available.",
+                            "description": "Loss date if explicitly available.",
                             "type": "array"
                         },
                         "claim_count": {
-                            "description": "Use explicit # Losses, No. of claims, or count column if present. Never use year, policy year, UW year, period, or date as claim_count. If each row is a single event/claim and no count is present, use 1. If only amount by year is present and no count exists, leave blank.",
+                            "description": "Number of claims/losses only if explicitly present in a count column such as No., # Losses, claim count, number of claims. If not explicitly present, return null. Never copy the year or period into claim_count.",
                             "type": "array"
                         },
                         "loss_amount": {
-                            "description": "Main loss amount. Prefer Total/Gross/Net Incurred, Total GBP/USD/EUR/CLF, Amount CLF, Reinsurer Payout, or Total Payable by Reinsurers.",
+                            "description": "Main loss amount for the row. Prefer Gross Claim Incurred, Total Incurred, Total GBP/USD/EUR/CLF/CAD/AUD. Do not use recovery/reserve columns when a total incurred column exists.",
                             "type": "array"
                         },
                         "currency": {
@@ -624,19 +762,19 @@ def get_ai_response_format_json():
                             "type": "array"
                         },
                         "amount_type": {
-                            "description": "The exact amount column used.",
+                            "description": "Column used as amount, e.g. Gross Claim Incurred, Total Incurred, Total GBP, Total USD, Total CLF.",
                             "type": "array"
                         },
                         "source_row_text": {
-                            "description": "Exact source row/table text.",
+                            "description": "Exact row or text used as evidence.",
                             "type": "array"
                         },
                         "include_in_aggregation": {
-                            "description": "False for subtotal, grand total, average, 5 year average, or 10 years total rows.",
+                            "description": "false for subtotal, grand total, average, 10 years total, summary rows. true for actual yearly/event rows.",
                             "type": "array"
                         },
                         "extraction_reason": {
-                            "description": "Brief explanation of the extraction.",
+                            "description": "Brief reason explaining why the row was extracted and which amount/count fields were used.",
                             "type": "array"
                         }
                     }
@@ -649,7 +787,7 @@ def get_ai_response_format_json():
 
 
 def call_ai_extract_for_file(session, relative_path):
-    response_format = get_ai_response_format_json()
+    response_format = get_response_format_json()
 
     query = """
         SELECT AI_EXTRACT(
@@ -684,9 +822,9 @@ def parse_ai_result(result):
 
     max_len = 0
 
-    for value in table.values():
-        if isinstance(value, list):
-            max_len = max(max_len, len(value))
+    for v in table.values():
+        if isinstance(v, list):
+            max_len = max(max_len, len(v))
 
     confidence = None
 
@@ -698,119 +836,69 @@ def parse_ai_result(result):
     rows = []
 
     for i in range(max_len):
-        raw = {}
+        row = {}
 
         for key, arr in table.items():
             if isinstance(arr, list) and i < len(arr):
-                raw[key] = arr[i]
+                row[key] = arr[i]
             else:
-                raw[key] = None
+                row[key] = None
 
-        source_text = raw.get("source_row_text")
-        period_text = raw.get("period_text")
-        loss_year = extract_year_from_text(period_text) or extract_year_from_text(source_text) or parse_int(raw.get("loss_year"))
-        loss_amount = parse_number(raw.get("loss_amount"))
+        source_text = row.get("source_row_text")
+        period_text = row.get("period_text")
 
-        if loss_year is None or loss_amount is None:
-            continue
+        loss_year = extract_year_from_text(period_text)
 
-        include_raw = raw.get("include_in_aggregation")
+        if loss_year is None:
+            loss_year = extract_year_from_text(source_text)
 
-        if include_raw is None:
-            include = not is_total_or_subtotal_text(source_text)
+        if loss_year is None:
+            loss_year = safe_int(row.get("loss_year"))
+
+        include_value = row.get("include_in_aggregation")
+
+        if include_value is None:
+            include_in_aggregation = not is_total_or_subtotal_text(source_text)
         else:
-            include = str(include_raw).strip().lower() in ('true', 'yes', '1')
+            include_in_aggregation = str(include_value).strip().lower() in ('true', 'yes', '1')
 
         if is_total_or_subtotal_text(source_text):
-            include = False
+            include_in_aggregation = False
 
-        currency = raw.get("currency") or detect_currency_from_text(source_text) or 'UNKNOWN'
+        currency = row.get("currency")
 
-        claim_count = parse_int(raw.get("claim_count"))
+        if currency is None or str(currency).strip() == '' or str(currency).upper() == 'UNKNOWN':
+            currency = detect_currency_from_text(source_text)
 
-        if claim_count is not None:
-            if claim_count == loss_year or claim_count > 10000:
-                claim_count = None
+        if currency is None:
+            currency = 'UNKNOWN'
 
-        if claim_count is None and is_event_level_row(period_text, source_text):
-            claim_count = 1
+        claim_count = sanitize_claim_count(
+            row.get("claim_count"),
+            loss_year,
+            source_text,
+            None
+        )
 
         rows.append({
             "loss_year": loss_year,
             "period_text": period_text,
-            "loss_date": raw.get("loss_date"),
+            "loss_date": row.get("loss_date"),
             "claim_count": claim_count,
-            "loss_amount": loss_amount,
+            "loss_amount": safe_float(row.get("loss_amount")),
             "currency": currency,
-            "amount_type": raw.get("amount_type"),
+            "amount_type": row.get("amount_type"),
             "source_sheet_name": None,
             "source_row_text": source_text,
-            "include_in_aggregation": include,
+            "include_in_aggregation": include_in_aggregation,
             "confidence": confidence,
-            "extraction_reason": raw.get("extraction_reason")
+            "extraction_reason": row.get("extraction_reason")
         })
 
     return rows
 
 
-def score_excel_file(session, file_info):
-    try:
-        rows = extract_excel_loss_rows(session, file_info)
-
-        if len(rows) == 0:
-            return 0.0, False, None
-
-        file_name = file_info["file_name"].lower()
-        score = 90 + min(len(rows), 30)
-
-        if any(k in file_name for k in ['loss', 'claim', 'claims', 'cat']):
-            score += 30
-
-        return float(score), True, None
-
-    except Exception as e:
-        return 0.0, False, str(e)
-
-
-def score_non_excel_file_base(file_info):
-    file_name = file_info["file_name"].lower()
-    score = 0
-
-    for keyword in LOSS_KEYWORDS:
-        if keyword in file_name:
-            score += 15
-
-    for keyword in SOFT_FILE_KEYWORDS:
-        if keyword in file_name:
-            score += 8
-
-    for keyword in NEGATIVE_KEYWORDS:
-        if keyword in file_name:
-            score -= 20
-
-    if file_info["extension"] in {'.pdf', '.docx', '.doc'}:
-        score += 8
-
-    if file_info["extension"] == '.eml':
-        score += 5
-
-    return float(score)
-
-
-def score_non_excel_file_content(session, file_info, base_score):
-    try:
-        rows = parse_ai_result(call_ai_extract_for_file(session, file_info["file_path"]))
-
-        if len(rows) > 0:
-            return base_score + 120 + min(len(rows), 30), True, None, rows
-
-        return base_score, False, None, []
-
-    except Exception as e:
-        return base_score, False, str(e), []
-
-
-def insert_file_selection(session, run_id, file_info, score, content_found, selected, attempted, row_count, rank, reason, status, error):
+def insert_file_selection(session, run_id, file_info, score, attempted, selected_final, rank, reason, status, error):
     query = f"""
         INSERT INTO {FILE_SELECTION_TABLE} (
             RUN_ID,
@@ -821,16 +909,14 @@ def insert_file_selection(session, run_id, file_info, score, content_found, sele
             FILE_SIZE,
             LAST_MODIFIED,
             LOSS_RELEVANCE_SCORE,
-            CONTENT_LOSS_FOUND,
-            SELECTED_FOR_EXTRACTION,
-            ATTEMPTED_EXTRACTION,
-            EXTRACTION_ROW_COUNT,
+            ATTEMPTED_FOR_EXTRACTION,
+            SELECTED_FOR_FINAL_EXTRACTION,
             SELECTION_RANK,
             SELECTION_REASON,
             PARSE_STATUS,
             ERROR_MESSAGE
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """
 
     session.sql(query, params=[
@@ -842,10 +928,8 @@ def insert_file_selection(session, run_id, file_info, score, content_found, sele
         file_info["size"],
         file_info["last_modified"],
         score,
-        content_found,
-        selected,
         attempted,
-        row_count,
+        selected_final,
         rank,
         reason,
         status,
@@ -853,10 +937,31 @@ def insert_file_selection(session, run_id, file_info, score, content_found, sele
     ]).collect()
 
 
+def update_file_selection_status(session, run_id, account_folder, file_path, status, error=None, selected_final=False):
+    query = f"""
+        UPDATE {FILE_SELECTION_TABLE}
+        SET PARSE_STATUS = ?,
+            ERROR_MESSAGE = ?,
+            SELECTED_FOR_FINAL_EXTRACTION = ?
+        WHERE RUN_ID = ?
+          AND ACCOUNT_FOLDER = ?
+          AND FILE_PATH = ?
+    """
+
+    session.sql(query, params=[
+        status,
+        error,
+        selected_final,
+        run_id,
+        account_folder,
+        file_path
+    ]).collect()
+
+
 def insert_loss_row(session, run_id, account_folder, file_info, row):
-    loss_year = clean_int(row.get("loss_year"))
-    claim_count = clean_number(row.get("claim_count"))
-    loss_amount = clean_number(row.get("loss_amount"))
+    loss_year = row.get("loss_year")
+    loss_amount = row.get("loss_amount")
+    source_text = row.get("source_row_text")
 
     if loss_year is None:
         return False
@@ -864,13 +969,17 @@ def insert_loss_row(session, run_id, account_folder, file_info, row):
     if loss_amount is None:
         return False
 
-    include_value = row.get("include_in_aggregation")
+    include_in_aggregation = row.get("include_in_aggregation")
 
-    if include_value is None:
-        include_value = True
+    if is_total_or_subtotal_text(source_text):
+        include_in_aggregation = False
 
-    if is_total_or_subtotal_text(row.get("source_row_text")):
-        include_value = False
+    claim_count = sanitize_claim_count(
+        row.get("claim_count"),
+        loss_year,
+        source_text,
+        None
+    )
 
     query = f"""
         INSERT INTO {EXTRACTION_TABLE} (
@@ -909,8 +1018,8 @@ def insert_loss_row(session, run_id, account_folder, file_info, row):
         row.get("currency") or 'UNKNOWN',
         row.get("amount_type"),
         row.get("source_sheet_name"),
-        row.get("source_row_text"),
-        include_value,
+        source_text,
+        include_in_aggregation,
         row.get("confidence"),
         row.get("extraction_reason")
     ]).collect()
@@ -918,13 +1027,29 @@ def insert_loss_row(session, run_id, account_folder, file_info, row):
     return True
 
 
-def aggregate_account(session, run_id, account_folder, as_of_year):
+def extract_rows_for_file(session, file_info, pre_extracted_rows=None):
+    if pre_extracted_rows is not None:
+        return pre_extracted_rows
+
+    ext = file_info["extension"]
+
+    if ext in EXCEL_EXTENSIONS:
+        return extract_excel_loss_rows(session, file_info)
+
+    if ext in DIRECT_AI_EXTENSIONS:
+        result = call_ai_extract_for_file(session, file_info["file_path"])
+        return parse_ai_result(result)
+
+    return []
+
+
+def aggregate_account(session, run_id, account_folder, as_of_year, final_file_info):
     if as_of_year is None or int(as_of_year) <= 0:
         as_of_year = datetime.now().year
     else:
         as_of_year = int(as_of_year)
 
-    start_year = as_of_year - 10
+    start_year = as_of_year - 9
 
     query = f"""
         SELECT
@@ -967,13 +1092,13 @@ def aggregate_account(session, run_id, account_folder, as_of_year):
     currency_rows = session.sql(currency_query, params=[run_id, account_folder]).collect()
     currency = currency_rows[0][0] if currency_rows else 'UNKNOWN'
 
-    min_year = clean_int(result[0])
-    max_year = clean_int(result[1])
-    available_year_count = clean_int(result[2])
-    total_claim_count = clean_number(result[3])
-    total_loss_amount = clean_number(result[4])
-    last_10_claim_count = clean_number(result[5])
-    last_10_loss_amount = clean_number(result[6])
+    min_year = result[0]
+    max_year = result[1]
+    available_year_count = result[2]
+    total_claim_count = result[3]
+    total_loss_amount = result[4]
+    last_10_claim_count = result[5]
+    last_10_loss_amount = result[6]
 
     if available_year_count is None or available_year_count == 0:
         quality = 'NO_USABLE_LOSS_ROWS'
@@ -983,7 +1108,7 @@ def aggregate_account(session, run_id, account_folder, as_of_year):
         reason = 'Loss rows extracted, but currency could not be identified.'
     else:
         quality = 'OK'
-        reason = 'Loss rows extracted and aggregated successfully.'
+        reason = 'Loss rows extracted and aggregated successfully. Amounts are not currency-converted; they are summed in the detected source currency.'
 
     insert_query = f"""
         INSERT INTO {AGGREGATED_TABLE} (
@@ -994,13 +1119,17 @@ def aggregate_account(session, run_id, account_folder, as_of_year):
             AVAILABLE_LOSS_YEAR_COUNT,
             TOTAL_AVAILABLE_CLAIM_COUNT,
             TOTAL_AVAILABLE_LOSS_AMOUNT,
+            LAST_10_YEAR_START,
+            LAST_10_YEAR_END,
             LAST_10_YEAR_CLAIM_COUNT,
             LAST_10_YEAR_LOSS_AMOUNT,
             CURRENCY,
             DATA_QUALITY_FLAG,
-            AGGREGATION_REASON
+            AGGREGATION_REASON,
+            FINAL_SOURCE_FILE_NAME,
+            FINAL_SOURCE_FILE_PATH
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """
 
     session.sql(insert_query, params=[
@@ -1011,55 +1140,39 @@ def aggregate_account(session, run_id, account_folder, as_of_year):
         available_year_count,
         total_claim_count,
         total_loss_amount,
+        start_year,
+        as_of_year,
         last_10_claim_count,
         last_10_loss_amount,
         currency,
         quality,
-        reason
+        reason,
+        final_file_info["file_name"] if final_file_info else None,
+        final_file_info["file_path"] if final_file_info else None
     ]).collect()
 
 
-def mark_processed(session, account_folder, run_id, status, error_message):
-    session.sql(
-        f"DELETE FROM {PROCESSED_TABLE} WHERE ACCOUNT_FOLDER = ?",
-        params=[account_folder]
-    ).collect()
+def delete_existing_for_scope(session, account_filter):
+    if account_filter and account_filter.strip():
+        pattern = f"%{account_filter.strip()}%"
 
-    session.sql(
-        f"""
-        INSERT INTO {PROCESSED_TABLE} (
-            ACCOUNT_FOLDER,
-            LAST_RUN_ID,
-            STATUS,
-            ERROR_MESSAGE
-        )
-        VALUES (?, ?, ?, ?)
-        """,
-        params=[account_folder, run_id, status, error_message]
-    ).collect()
+        session.sql(
+            f"DELETE FROM {FILE_SELECTION_TABLE} WHERE ACCOUNT_FOLDER ILIKE ?",
+            params=[pattern]
+        ).collect()
 
+        session.sql(
+            f"DELETE FROM {EXTRACTION_TABLE} WHERE ACCOUNT_FOLDER ILIKE ?",
+            params=[pattern]
+        ).collect()
 
-def delete_existing_for_account(session, account_folder):
-    session.sql(
-        f"DELETE FROM {EXTRACTION_TABLE} WHERE ACCOUNT_FOLDER = ?",
-        params=[account_folder]
-    ).collect()
-
-    session.sql(
-        f"DELETE FROM {AGGREGATED_TABLE} WHERE ACCOUNT_FOLDER = ?",
-        params=[account_folder]
-    ).collect()
+        session.sql(
+            f"DELETE FROM {AGGREGATED_TABLE} WHERE ACCOUNT_FOLDER ILIKE ?",
+            params=[pattern]
+        ).collect()
 
 
-def get_successfully_processed_accounts(session):
-    rows = session.sql(
-        f"SELECT ACCOUNT_FOLDER FROM {PROCESSED_TABLE} WHERE STATUS = 'SUCCESS'"
-    ).collect()
-
-    return set([r[0] for r in rows])
-
-
-def run(session, max_accounts, account_name_filter, as_of_year, force_reprocess):
+def run(session, max_accounts, account_name_filter, as_of_year):
     run_id = str(uuid.uuid4())
 
     if max_accounts is None or int(max_accounts) <= 0:
@@ -1068,7 +1181,8 @@ def run(session, max_accounts, account_name_filter, as_of_year, force_reprocess)
         max_accounts = int(max_accounts)
 
     account_filter = account_name_filter.strip() if account_name_filter else None
-    force_reprocess = bool(force_reprocess)
+
+    delete_existing_for_scope(session, account_filter)
 
     all_files = list_stage_files(session)
 
@@ -1083,160 +1197,163 @@ def run(session, max_accounts, account_name_filter, as_of_year, force_reprocess)
     for file_info in all_files:
         by_account.setdefault(file_info["account_folder"], []).append(file_info)
 
-    processed_success = set()
-
-    if not force_reprocess and not account_filter:
-        processed_success = get_successfully_processed_accounts(session)
-
-    candidate_accounts = [
-        acc for acc in sorted(by_account.keys())
-        if force_reprocess or account_filter or acc not in processed_success
-    ]
-
-    selected_accounts = candidate_accounts[:max_accounts]
+    selected_accounts = sorted(by_account.keys())[:max_accounts]
 
     processed_accounts = 0
-    selected_files_count = 0
+    attempted_accounts = 0
+    attempted_files_count = 0
+    final_selected_files_count = 0
     extracted_rows_count = 0
     errors = []
 
     for account_folder in selected_accounts:
-        delete_existing_for_account(session, account_folder)
+        attempted_accounts += 1
 
         files = by_account[account_folder]
         scored_files = []
-        precomputed_rows_by_file = {}
 
         for file_info in files:
             try:
                 if file_info["extension"] in EXCEL_EXTENSIONS:
-                    score, content_found, error = score_excel_file(session, file_info)
-
+                    score, error, pre_rows = score_excel_file(session, file_info)
                 else:
-                    base_score = score_non_excel_file_base(file_info)
-
-                    should_probe = (
-                        base_score > 0
-                        or file_info["extension"] in {'.docx', '.doc', '.pdf', '.eml'}
-                    )
-
-                    if should_probe:
-                        score, content_found, error, rows = score_non_excel_file_content(session, file_info, base_score)
-                        if rows:
-                            precomputed_rows_by_file[file_info["file_path"]] = rows
-                    else:
-                        score = base_score
-                        content_found = False
-                        error = None
+                    score = score_non_excel_file(file_info)
+                    error = None
+                    pre_rows = None
 
                 scored_files.append({
                     "file_info": file_info,
                     "score": score,
-                    "content_found": content_found,
-                    "error": error
+                    "error": error,
+                    "pre_rows": pre_rows
                 })
 
             except Exception as e:
                 scored_files.append({
                     "file_info": file_info,
                     "score": 0.0,
-                    "content_found": False,
-                    "error": str(e)
+                    "error": str(e),
+                    "pre_rows": None
                 })
 
         scored_files = sorted(scored_files, key=lambda x: x["score"], reverse=True)
 
-        inserted_for_account = 0
-        selected_file_path = None
+        candidate_files = scored_files[:MAX_CANDIDATE_FILES_PER_ACCOUNT]
 
-        for idx, item in enumerate(scored_files[:10], start=1):
-            file_info = item["file_info"]
-
-            if item["score"] <= 0:
-                continue
-
-            row_count = 0
-
-            try:
-                if file_info["file_path"] in precomputed_rows_by_file:
-                    rows = precomputed_rows_by_file[file_info["file_path"]]
-                elif file_info["extension"] in EXCEL_EXTENSIONS:
-                    rows = extract_excel_loss_rows(session, file_info)
-                else:
-                    rows = parse_ai_result(call_ai_extract_for_file(session, file_info["file_path"]))
-
-                for row in rows:
-                    if insert_loss_row(session, run_id, account_folder, file_info, row):
-                        row_count += 1
-
-                if row_count > 0:
-                    inserted_for_account = row_count
-                    selected_file_path = file_info["file_path"]
-                    break
-
-            except Exception as e:
-                item["error"] = str(e)
+        candidate_paths = set([x["file_info"]["file_path"] for x in candidate_files])
 
         for idx, item in enumerate(scored_files, start=1):
-            file_info = item["file_info"]
-            selected = selected_file_path == file_info["file_path"]
-            attempted = idx <= 10 and item["score"] > 0
-            row_count = inserted_for_account if selected else 0
+            attempted = item["file_info"]["file_path"] in candidate_paths
 
-            if selected:
-                reason = 'Selected because it produced usable loss-history rows.'
-                status = 'SELECTED_SUCCESS'
-            elif attempted:
-                reason = 'Attempted as fallback candidate but did not produce usable rows.'
-                status = 'ATTEMPTED_NO_ROWS' if item["error"] is None else 'ATTEMPT_ERROR'
+            if attempted:
+                reason = 'Candidate for extraction. If higher ranked candidates produce zero rows, this file will be tried as fallback.'
             else:
-                reason = 'Not attempted because higher-scoring candidates were tried first.'
-                status = 'SCORED'
+                reason = 'Not attempted because it ranked below the candidate limit.'
+
+            status = 'CANDIDATE' if attempted else 'NOT_ATTEMPTED'
+
+            if item["error"] is not None:
+                status = 'SCORING_ERROR'
 
             insert_file_selection(
-                session=session,
-                run_id=run_id,
-                file_info=file_info,
-                score=item["score"],
-                content_found=item["content_found"],
-                selected=selected,
-                attempted=attempted,
-                row_count=row_count,
-                rank=idx,
-                reason=reason,
-                status=status,
-                error=item["error"]
+                session,
+                run_id,
+                item["file_info"],
+                item["score"],
+                attempted,
+                False,
+                idx,
+                reason,
+                status,
+                item["error"]
             )
 
-        if inserted_for_account > 0:
-            try:
-                aggregate_account(session, run_id, account_folder, as_of_year)
-                mark_processed(session, account_folder, run_id, 'SUCCESS', None)
+        if len(candidate_files) == 0:
+            errors.append(f"{account_folder}: no supported files found")
+            continue
 
-                processed_accounts += 1
-                selected_files_count += 1
-                extracted_rows_count += inserted_for_account
+        account_inserted = 0
+        final_file_info = None
+        candidate_errors = []
+
+        for candidate in candidate_files:
+            file_info = candidate["file_info"]
+            attempted_files_count += 1
+
+            try:
+                rows = extract_rows_for_file(
+                    session,
+                    file_info,
+                    candidate.get("pre_rows")
+                )
+
+                inserted = 0
+
+                for row in rows:
+                    ok = insert_loss_row(session, run_id, account_folder, file_info, row)
+
+                    if ok:
+                        inserted += 1
+
+                if inserted > 0:
+                    update_file_selection_status(
+                        session,
+                        run_id,
+                        account_folder,
+                        file_info["file_path"],
+                        'FINAL_SELECTED_ROWS_EXTRACTED',
+                        None,
+                        True
+                    )
+
+                    account_inserted = inserted
+                    final_file_info = file_info
+                    final_selected_files_count += 1
+                    extracted_rows_count += inserted
+                    break
+
+                update_file_selection_status(
+                    session,
+                    run_id,
+                    account_folder,
+                    file_info["file_path"],
+                    'ATTEMPTED_ZERO_VALID_ROWS',
+                    'Candidate was attempted but produced zero valid loss rows.',
+                    False
+                )
 
             except Exception as e:
-                error_message = f"Aggregation error: {str(e)}"
-                mark_processed(session, account_folder, run_id, 'ERROR', error_message)
-                errors.append(f"{account_folder}: {error_message}")
+                candidate_errors.append(f"{file_info['file_name']}: {str(e)}")
 
+                update_file_selection_status(
+                    session,
+                    run_id,
+                    account_folder,
+                    file_info["file_path"],
+                    'EXTRACTION_ERROR',
+                    str(e),
+                    False
+                )
+
+        if account_inserted > 0:
+            aggregate_account(session, run_id, account_folder, as_of_year, final_file_info)
+            processed_accounts += 1
         else:
-            error_message = 'No candidate file produced usable loss-history rows.'
-            mark_processed(session, account_folder, run_id, 'ERROR', error_message)
-            errors.append(f"{account_folder}: {error_message}")
+            errors.append(
+                f"{account_folder}: no candidate produced valid rows. Candidate errors: {candidate_errors[:3]}"
+            )
 
     summary = {
         "run_id": run_id,
         "accounts_seen": len(by_account),
-        "accounts_skipped_success_previous_runs": len(processed_success),
-        "accounts_attempted": len(selected_accounts),
+        "accounts_attempted": attempted_accounts,
         "accounts_processed": processed_accounts,
-        "selected_files_count": selected_files_count,
+        "attempted_files_count": attempted_files_count,
+        "final_selected_files_count": final_selected_files_count,
         "extracted_rows_count": extracted_rows_count,
         "error_count": len(errors),
-        "errors_sample": errors[:10]
+        "errors_sample": errors[:10],
+        "candidate_limit_per_account": MAX_CANDIDATE_FILES_PER_ACCOUNT
     }
 
     return json.dumps(summary, indent=2)
