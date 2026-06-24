@@ -1,0 +1,51 @@
+import pandas as pd
+
+# ------------------------
+# CONFIG
+# ------------------------
+XML_FILE = "input.xml"
+OUTPUT_FILE = "final_query.txt"
+
+# ------------------------
+# 1. Read XML File
+# ------------------------
+df = pd.read_xml(XML_FILE)
+
+# ------------------------
+# 2. Extract UID and convert to WCP padded format
+# ------------------------
+uids = df["uid"].astype(int)
+wcp_ids = ["WCP" + str(uid).zfill(7) for uid in uids]
+
+# ------------------------
+# 3. Build SQL formatted list
+# ------------------------
+sql_list = ",\n".join([f"('equal', '{x}')" for x in wcp_ids])
+
+# ------------------------
+# 4. SQL QUERY TEMPLATE
+# ------------------------
+sql_query = f"""
+SELECT
+    Count(Distinct Msg.T_MESSAGE_ID) AS MSGS,
+    Count(Msg.T_MESSAGE_ID) AS TOTAL_HITS
+FROM SANCTIONS_OWNER.FOF_HIST_HITS FHH
+JOIN SANCTIONS_OWNER.FOFA_HIST_MESSAGE MSG
+    ON MSG.t_system_id = FHH.SYSTEM_ID
+WHERE msg.T_FILTERED >= '2024/07/01 00:00:00'
+  AND msg.T_FILTERED <= '2024/09/31 23:59:59'
+  AND msg.t_lastoperator = 'ReapplyingEngine'
+  AND msg.T_DECISION_TYPE <> 'RECHECKED'
+  AND msg.t_lastoperator <> 'Stripping Engine'
+  AND ('equal', FHH.id_list) IN (
+{sql_list}
+);
+"""
+
+# ------------------------
+# 5. Write final SQL to a text file
+# ------------------------
+with open(OUTPUT_FILE, "w") as f:
+    f.write(sql_query.strip())
+
+print("✅ SQL file generated:", OUTPUT_FILE)
